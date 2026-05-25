@@ -1,7 +1,8 @@
 import { createContext, useState, useContext, useEffect } from 'react';
-import axios from 'axios';
+import api from '../services/api';
 
 const AuthContext = createContext();
+
 export const useAuth = () => useContext(AuthContext);
 
 export const AuthProvider = ({ children }) => {
@@ -10,12 +11,20 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
-    if (storedUser) setUser(JSON.parse(storedUser));
+
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    }
+
     setLoading(false);
   }, []);
 
   const login = async (email, password) => {
-    const { data } = await axios.post('https://erp-system-1-0yod.onrender.com/api', { email, password });
+    const { data } = await api.post('/auth/login', {
+      email,
+      password,
+    });
+
     setUser(data);
     localStorage.setItem('user', JSON.stringify(data));
   };
@@ -31,5 +40,3 @@ export const AuthProvider = ({ children }) => {
     </AuthContext.Provider>
   );
 };
-
-
