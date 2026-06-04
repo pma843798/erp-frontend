@@ -372,30 +372,34 @@ const TrackerPage = () => {
     return '';
   }, [darkMode]);
 
-const createClickableBody = useCallback((field, isDate = false, statusField = null) => (rowData) => {
+// ✅ NEW: Status map frontend ke liye
+  const approvalFieldsMap = useMemo(() => ({
+    'labdipPlannedStatus': { by: 'labdipApprovedBy', date: 'labdipApprovedDate' },
+    'photoSamplePlannedStatus': { by: 'photoSampleApprovedBy', date: 'photoSampleApprovedDate' },
+    'plannedFPTStatus': { by: 'plannedFPTApprovedBy', date: 'plannedFPTApprovedDate' },
+    'plannedGPTStatus': { by: 'plannedGPTApprovedBy', date: 'plannedGPTApprovedDate' },
+    'gsmColorLotsPlannedStatus': { by: 'gsmColorLotsApprovedBy', date: 'gsmColorLotsApprovedDate' }
+  }), []);
+
+  const createClickableBody = useCallback((field, isDate = false, statusField = null) => (rowData) => {
     let val = rowData[field];
     const isDateField = (field === 'factoryFOB') || isDate;
     
-    // Format current value safely
     const display = isDateField && val ? formatDate(val) : (val !== undefined && val !== null && val !== 'None' ? String(val) : '');
     
     const hasHistory = rowData.history && rowData.history.some(h => {
       if (h.field !== field) return false;
-      
-      // ✅ FIX 3: Properly handle null/None values so empty dates don't trigger alerts
       let rawOld = h.oldValue === 'None' || h.oldValue === null || h.oldValue === undefined || h.oldValue === '' ? '' : h.oldValue;
       let rawNew = h.newValue === 'None' || h.newValue === null || h.newValue === undefined || h.newValue === '' ? '' : h.newValue;
-
       const fOld = isDateField && rawOld ? formatDate(rawOld) : String(rawOld);
       const fNew = isDateField && rawNew ? formatDate(rawNew) : String(rawNew);
-      
       return fOld !== fNew;
     });
 
     return (
-      <div className="flex items-center justify-start gap-2 whitespace-nowrap">
+      <div className="flex items-start justify-start gap-3 whitespace-nowrap">
         <span
-          className={`cursor-pointer transition-all flex items-center font-medium p-1 rounded-lg text-sm ${hasHistory
+          className={`cursor-pointer transition-all flex items-center font-medium p-1 rounded-lg text-sm mt-0.5 ${hasHistory
               ? (darkMode ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'bg-orange-100 text-orange-700 border border-orange-200')
               : (darkMode ? 'hover:text-cyan-400' : 'hover:text-blue-600')
             }`}
@@ -408,14 +412,25 @@ const createClickableBody = useCallback((field, isDate = false, statusField = nu
           {display || '-'}
           {hasHistory && <div className="w-2 h-2 rounded-full bg-orange-500 shrink-0 ml-2 animate-pulse" />}
         </span>
+        
         {statusField && (
-          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border inline-block ${getStatusBadgeStyles(rowData[statusField])}`}>
-            {rowData[statusField] || 'Pending'}
-          </span>
+          <div className="flex flex-col gap-0.5 items-start">
+            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border inline-block ${getStatusBadgeStyles(rowData[statusField])}`}>
+              {rowData[statusField] || 'Pending'}
+            </span>
+            
+            {/* ✅ NEW: Approval name and date side me dikhane ka logic */}
+            {rowData[statusField] === 'Approved' && approvalFieldsMap[statusField] && rowData[approvalFieldsMap[statusField].by] && (
+              <span className={`text-[9px] leading-tight ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                {rowData[approvalFieldsMap[statusField].by]}<br/>
+                {rowData[approvalFieldsMap[statusField].date] ? new Date(rowData[approvalFieldsMap[statusField].date]).toLocaleDateString('en-GB') : ''}
+              </span>
+            )}
+          </div>
         )}
       </div>
     );
-  }, [darkMode, formatDate, showCellHistory, getStatusBadgeStyles]);
+  }, [darkMode, formatDate, showCellHistory, getStatusBadgeStyles, approvalFieldsMap]);
 
   const columnStyle = useCallback((field) => {
     if (redFields.includes(field)) return { backgroundColor: darkMode ? 'rgba(239, 68, 68, 0.12)' : '#fff1f1' };
