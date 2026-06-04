@@ -45,6 +45,9 @@ const AIChat = () => {
         if (!input.trim()) return;
 
         const userMsg = input;
+        
+        // ✅ API bhejne ke liye current messages store kiye
+        const currentHistory = [...messages];
 
         setMessages((prev) => [
             ...prev,
@@ -58,7 +61,8 @@ const AIChat = () => {
         setLoading(true);
 
         try {
-            const aiResponse = await askAiAssistant(userMsg);
+            // ✅ userMsg ke sath currentHistory bhi bhej di
+            const aiResponse = await askAiAssistant(userMsg, currentHistory);
 
             setMessages((prev) => [
                 ...prev,
