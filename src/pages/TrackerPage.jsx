@@ -646,7 +646,7 @@ const createClickableBody = useCallback((field, isDate = false, statusField = nu
         </div>
       </Dialog>
 
-      <OverlayPanel ref={op} className={`shadow-2xl rounded-2xl ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`} style={{ maxWidth: '450px' }}>
+      <OverlayPanel ref={op} className={`shadow-2xl rounded-2xl ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`} style={{ maxWidth: '550px' }}>
         <div className="p-4">
           <div className="flex justify-between items-center mb-3 gap-8">
             <h4 className={`text-lg font-bold ${darkMode ? 'text-cyan-400' : 'text-blue-600'}`}>📜 History Log</h4>
@@ -660,7 +660,13 @@ const createClickableBody = useCallback((field, isDate = false, statusField = nu
             <div className="max-h-[300px] overflow-y-auto">
               <table className="w-full text-sm text-left">
                 <thead className={`sticky top-0 ${darkMode ? 'bg-[#1e293b] text-gray-400' : 'bg-slate-50 text-slate-500'}`}>
-                  <tr><th className="p-2">Old Value</th><th className="p-2">New Value</th><th className="p-2">Changed By</th></tr>
+                  <tr>
+                    <th className="p-2">Old Value</th>
+                    <th className="p-2">New Value</th>
+                    <th className="p-2">Changed By</th>
+                    {/* ✅ Naya Column Add Kiya */}
+                    <th className="p-2">Date & Time</th> 
+                  </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700">
                   {cellHistory.map((h, i) => (
@@ -668,6 +674,10 @@ const createClickableBody = useCallback((field, isDate = false, statusField = nu
                       <td className="p-2">{h.oldValue ? formatDate(h.oldValue) : '-'}</td>
                       <td className={`p-2 font-medium ${darkMode ? 'text-white' : 'text-blue-600'}`}>{h.newValue ? formatDate(h.newValue) : '-'}</td>
                       <td className="p-2 text-xs">{h.changedBy?.name || 'N/A'}</td>
+                      {/* ✅ Naya Data Cell (Date aur Time format ke sath) */}
+                      <td className="p-2 text-xs text-gray-500 whitespace-nowrap">
+                        {h.date ? new Date(h.date).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '-'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
