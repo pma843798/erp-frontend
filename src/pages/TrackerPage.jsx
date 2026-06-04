@@ -372,15 +372,23 @@ const TrackerPage = () => {
     return '';
   }, [darkMode]);
 
-  const createClickableBody = useCallback((field, isDate = false, statusField = null) => (rowData) => {
+const createClickableBody = useCallback((field, isDate = false, statusField = null) => (rowData) => {
     let val = rowData[field];
     const isDateField = (field === 'factoryFOB') || isDate;
-    const display = isDateField && val ? formatDate(val) : (val !== undefined && val !== null ? String(val) : '');
+    
+    // Format current value safely
+    const display = isDateField && val ? formatDate(val) : (val !== undefined && val !== null && val !== 'None' ? String(val) : '');
     
     const hasHistory = rowData.history && rowData.history.some(h => {
       if (h.field !== field) return false;
-      const fOld = isDateField ? formatDate(h.oldValue) : String(h.oldValue ?? '');
-      const fNew = isDateField ? formatDate(h.newValue) : String(h.newValue ?? '');
+      
+      // ✅ FIX 3: Properly handle null/None values so empty dates don't trigger alerts
+      let rawOld = h.oldValue === 'None' || h.oldValue === null || h.oldValue === undefined || h.oldValue === '' ? '' : h.oldValue;
+      let rawNew = h.newValue === 'None' || h.newValue === null || h.newValue === undefined || h.newValue === '' ? '' : h.newValue;
+
+      const fOld = isDateField && rawOld ? formatDate(rawOld) : String(rawOld);
+      const fNew = isDateField && rawNew ? formatDate(rawNew) : String(rawNew);
+      
       return fOld !== fNew;
     });
 
