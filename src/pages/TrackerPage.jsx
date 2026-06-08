@@ -31,7 +31,12 @@ const standardFields = [
   'photoSampleDue', 'photoSamplePlannedDate', 'photoSamplePlannedStatus',
   'testReportDue', 'plannedFPT', 'plannedFPTStatus', 'plannedGPT', 'plannedGPTStatus',
   'gsmColorLotsDue', 'gsmColorLotsPlanned', 'gsmColorLotsPlannedStatus', 'remark',
-  'approvalStatus', 'pendingStatus', 'buyerApproval', 'priority'
+  'approvalStatus', 'pendingStatus', 'buyerApproval', 'priority',
+  'labdipApprovedBy', 'labdipApprovedDate',
+  'photoSampleApprovedBy', 'photoSampleApprovedDate',
+  'plannedFPTApprovedBy', 'plannedFPTApprovedDate',
+  'plannedGPTApprovedBy', 'plannedGPTApprovedDate',
+  'gsmColorLotsApprovedBy', 'gsmColorLotsApprovedDate'
 ];
 
 const ignoredColumns = ['LABDIPAPPROVEDBY', 'LABDIPAPPROVEDDATE'];
@@ -100,7 +105,6 @@ const TrackerPage = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({});
 
-  // 🔥 Stable API callbacks - no more infinite loop!
   const fetchData = useCallback(async () => {
     const { data } = await api.get('/tracker');
     return data;
@@ -183,7 +187,6 @@ const TrackerPage = () => {
     }
   }, [fetchData]);
 
-  // ✅ Effect only runs once now because loadData is stable
   useEffect(() => {
     loadData();
   }, [loadData]);
@@ -372,7 +375,6 @@ const TrackerPage = () => {
     return '';
   }, [darkMode]);
 
-// ✅ NEW: Status map frontend ke liye
   const approvalFieldsMap = useMemo(() => ({
     'labdipPlannedStatus': { by: 'labdipApprovedBy', date: 'labdipApprovedDate' },
     'photoSamplePlannedStatus': { by: 'photoSampleApprovedBy', date: 'photoSampleApprovedDate' },
@@ -382,55 +384,67 @@ const TrackerPage = () => {
   }), []);
 
   const createClickableBody = useCallback((field, isDate = false, statusField = null) => (rowData) => {
-    let val = rowData[field];
-    const isDateField = (field === 'factoryFOB') || isDate;
-    
-    const display = isDateField && val ? formatDate(val) : (val !== undefined && val !== null && val !== 'None' ? String(val) : '');
-    
-    const hasHistory = rowData.history && rowData.history.some(h => {
-      if (h.field !== field) return false;
-      let rawOld = h.oldValue === 'None' || h.oldValue === null || h.oldValue === undefined || h.oldValue === '' ? '' : h.oldValue;
-      let rawNew = h.newValue === 'None' || h.newValue === null || h.newValue === undefined || h.newValue === '' ? '' : h.newValue;
-      const fOld = isDateField && rawOld ? formatDate(rawOld) : String(rawOld);
-      const fNew = isDateField && rawNew ? formatDate(rawNew) : String(rawNew);
-      return fOld !== fNew;
-    });
+  let val = rowData[field];
+  const isDateField = (field === 'factoryFOB') || isDate;
 
-    return (
-      <div className="flex items-start justify-start gap-3 whitespace-nowrap">
-        <span
-          className={`cursor-pointer transition-all flex items-center font-medium p-1 rounded-lg text-sm mt-0.5 ${hasHistory
-              ? (darkMode ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'bg-orange-100 text-orange-700 border border-orange-200')
-              : (darkMode ? 'hover:text-cyan-400' : 'hover:text-blue-600')
-            }`}
-          onClick={(e) => {
-            e.stopPropagation();
-            showCellHistory(e, field, rowData);
-          }}
-          title={hasHistory ? "Updated recently" : "View History"}
-        >
-          {display || '-'}
-          {hasHistory && <div className="w-2 h-2 rounded-full bg-orange-500 shrink-0 ml-2 animate-pulse" />}
-        </span>
-        
-        {statusField && (
-          <div className="flex flex-col gap-0.5 items-start">
-            <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border inline-block ${getStatusBadgeStyles(rowData[statusField])}`}>
-              {rowData[statusField] || 'Pending'}
-            </span>
-            
-            {/* ✅ NEW: Approval name and date side me dikhane ka logic */}
-            {rowData[statusField] === 'Approved' && approvalFieldsMap[statusField] && rowData[approvalFieldsMap[statusField].by] && (
-              <span className={`text-[9px] leading-tight ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                {rowData[approvalFieldsMap[statusField].by]}<br/>
-                {rowData[approvalFieldsMap[statusField].date] ? new Date(rowData[approvalFieldsMap[statusField].date]).toLocaleDateString('en-GB') : ''}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  }, [darkMode, formatDate, showCellHistory, getStatusBadgeStyles, approvalFieldsMap]);
+  const display = isDateField && val ? formatDate(val) : (val !== undefined && val !== null && val !== 'None' ? String(val) : '');
+
+  // For dot: same ignore‑initial logic
+  const hasHistory = rowData.history && rowData.history.some(h => {
+    if (h.field !== field) return false;
+    let rawOld = h.oldValue === 'None' || h.oldValue === null || h.oldValue === undefined || h.oldValue === '' ? '' : h.oldValue;
+    let rawNew = h.newValue === 'None' || h.newValue === null || h.newValue === undefined || h.newValue === '' ? '' : h.newValue;
+    if (!rawOld && rawNew) return false;
+    const fOld = isDateField && rawOld ? formatDate(rawOld) : String(rawOld);
+    const fNew = isDateField && rawNew ? formatDate(rawNew) : String(rawNew);
+    return fOld !== fNew;
+  });
+
+  return (
+    <div className="flex items-start justify-start gap-3 whitespace-nowrap">
+      <span
+        className={`cursor-pointer transition-all flex items-center font-medium p-1 rounded-lg text-sm mt-0.5 ${
+          hasHistory
+            ? (darkMode ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'bg-orange-100 text-orange-700 border border-orange-200')
+            : (darkMode ? 'hover:text-cyan-400' : 'hover:text-blue-600')
+        }`}
+        onClick={(e) => {
+          e.stopPropagation();
+          showCellHistory(e, field, rowData);
+        }}
+        title={hasHistory ? "Updated recently" : "View History"}
+      >
+        {display || '-'}
+        {hasHistory && <div className="w-2 h-2 rounded-full bg-orange-500 shrink-0 ml-2 animate-pulse" />}
+      </span>
+
+      {statusField && (
+        <div className="flex flex-col gap-0.5 items-start">
+          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border inline-block ${getStatusBadgeStyles(rowData[statusField])}`}>
+            {rowData[statusField] || 'Pending'}
+          </span>
+
+        {rowData[statusField] === 'Approved' && approvalFieldsMap[statusField] && rowData[approvalFieldsMap[statusField].by] && (
+  <span className={`text-[9px] leading-tight flex flex-col ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+    <span>{rowData[approvalFieldsMap[statusField].by].split('(')[0].trim()}</span>
+    <span
+      className="cursor-pointer hover:text-blue-400 transition-colors"
+      onClick={(e) => {
+        e.stopPropagation();
+        const approvalDateField = approvalFieldsMap[statusField].date;
+        showCellHistory(e, field, rowData, approvalDateField);
+      }}
+      title="View approval date history"
+    >
+      {rowData[approvalFieldsMap[statusField].date] ? formatDate(rowData[approvalFieldsMap[statusField].date]) : '--'}
+    </span>
+  </span>
+)}
+        </div>
+      )}
+    </div>
+  );
+}, [darkMode, formatDate, showCellHistory, getStatusBadgeStyles, approvalFieldsMap]);
 
   const columnStyle = useCallback((field) => {
     if (redFields.includes(field)) return { backgroundColor: darkMode ? 'rgba(239, 68, 68, 0.12)' : '#fff1f1' };
@@ -459,7 +473,7 @@ const TrackerPage = () => {
     { field: 'remark', header: 'Remark' },
     ...customCols.map(col => ({ field: col, header: col.toUpperCase() })),
     { field: 'actions', header: 'Edit', frozen: true, style: { width: '80px' } }
-  ], [isAdmin, customCols]);
+  ], [isAdmin, customCols, darkMode]);
 
   const visibleColumns = useMemo(() => allColumnDefs.filter(col => !hiddenColumns.includes(col.field)), [allColumnDefs, hiddenColumns]);
 
@@ -531,8 +545,8 @@ const TrackerPage = () => {
     <button
       onClick={() => navigate(path)}
       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${active
-          ? 'bg-[#0080ff] text-white shadow-md'
-          : (darkMode ? 'text-gray-400 hover:bg-white/5 hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900')
+        ? 'bg-[#0080ff] text-white shadow-md'
+        : (darkMode ? 'text-gray-400 hover:bg-white/5 hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900')
         }`}
     >
       <Icon size={20} />
@@ -541,13 +555,42 @@ const TrackerPage = () => {
   ), [darkMode, navigate]);
 
   const totalEntries = data.length;
-  const pendingCount = data.filter(row => row.pendingStatus && !['Approved','Completed'].includes(row.pendingStatus)).length;
+  const pendingCount = data.filter(row => row.pendingStatus && !['Approved', 'Completed'].includes(row.pendingStatus)).length;
+
+  const renderApprovalFields = (statusField, byField, dateField) => {
+    if (formData[statusField] !== 'Approved') return null;
+    return (
+      <div className="field md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 mt-2 p-3 rounded-lg border border-green-500/30 bg-green-50/10">
+        <div>
+          <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-green-400' : 'text-green-700'}`}>Approved By</label>
+          <InputText
+            value={formData[byField] || ''}
+            onChange={(e) => setFormData({ ...formData, [byField]: e.target.value })}
+            placeholder="Enter name"
+            disabled={!isFieldEditable(byField)}
+            className={`w-full p-2 text-sm ${darkMode ? 'bg-white/5 border-white/10 text-white' : ''}`}
+          />
+        </div>
+        <div>
+          <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-green-400' : 'text-green-700'}`}>Approved Date</label>
+          <Calendar
+            value={formData[dateField] ? new Date(formData[dateField]) : null}
+            onChange={(e) => setFormData({ ...formData, [dateField]: dateToStr(e.value) })}
+            dateFormat="dd/mm/yy"
+            disabled={!isFieldEditable(dateField)}
+            className="w-full"
+            inputClassName="p-2 text-sm"
+          />
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className={`flex h-screen w-full transition-all duration-300 overflow-hidden ${darkMode ? 'bg-[#0f172a] text-white' : 'bg-[#f4f7fb] text-slate-900'}`}>
-      
+
       <Toast ref={toast} />
-      <ConfirmDialog visible={confirmState.visible} onHide={() => setConfirmState(prev => ({ ...prev, visible: false }))} message={confirmState.message} 
+      <ConfirmDialog visible={confirmState.visible} onHide={() => setConfirmState(prev => ({ ...prev, visible: false }))} message={confirmState.message}
         header="Confirmation" icon="pi pi-exclamation-triangle" accept={confirmState.accept} />
 
       <aside className={`w-[260px] h-full flex flex-col justify-between border-r shrink-0 transition-all ${darkMode ? 'bg-[#1e293b] border-gray-800' : 'bg-white border-gray-200 shadow-sm'}`}>
@@ -679,8 +722,7 @@ const TrackerPage = () => {
                     <th className="p-2">Old Value</th>
                     <th className="p-2">New Value</th>
                     <th className="p-2">Changed By</th>
-                    {/* ✅ Naya Column Add Kiya */}
-                    <th className="p-2">Date & Time</th> 
+                    <th className="p-2"> Approved Date & Time</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700">
@@ -689,9 +731,10 @@ const TrackerPage = () => {
                       <td className="p-2">{h.oldValue ? formatDate(h.oldValue) : '-'}</td>
                       <td className={`p-2 font-medium ${darkMode ? 'text-white' : 'text-blue-600'}`}>{h.newValue ? formatDate(h.newValue) : '-'}</td>
                       <td className="p-2 text-xs">{h.changedBy?.name || 'N/A'}</td>
-                      {/* ✅ Naya Data Cell (Date aur Time format ke sath) */}
                       <td className="p-2 text-xs text-gray-500 whitespace-nowrap">
-                        {h.date ? new Date(h.date).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true }) : '-'}
+                        {(h.changedAt || h.date)
+                          ? `${formatDate(h.changedAt || h.date)} ${new Date(h.changedAt || h.date).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}`
+                          : '-'}
                       </td>
                     </tr>
                   ))}
@@ -704,7 +747,6 @@ const TrackerPage = () => {
 
       <Dialog visible={formDialog} style={{ width: '850px' }} header={isEditing ? 'Edit Record' : 'New Record'} modal footer={dialogFooter} onHide={hideDialog} className={darkMode ? 'dark-dialog' : ''}>
         <TabView className="mt-2">
-          {/* ... (Tab panels unchanged, same as before) ... */}
           <TabPanel header="Basic Details">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="field">
@@ -748,6 +790,7 @@ const TrackerPage = () => {
                   <Calendar value={formData.labdipPlannedDate ? new Date(formData.labdipPlannedDate) : null} onChange={(e) => setFormData({ ...formData, labdipPlannedDate: dateToStr(e.value) })} disabled={!isFieldEditable('labdipPlannedDate')} dateFormat="dd/mm/yy" className="flex-1" inputClassName="p-2 text-sm" />
                   <Dropdown value={formData.labdipPlannedStatus || 'Pending'} options={statusOptions} onChange={(e) => setFormData({ ...formData, labdipPlannedStatus: e.value })} disabled={!isFieldEditable('labdipPlannedStatus')} className="flex-1" placeholder="Select Status" />
                 </div>
+                {renderApprovalFields('labdipPlannedStatus', 'labdipApprovedBy', 'labdipApprovedDate')}
               </div>
               <div className="field">
                 <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Photo Sample Due</label>
@@ -759,6 +802,7 @@ const TrackerPage = () => {
                   <Calendar value={formData.photoSamplePlannedDate ? new Date(formData.photoSamplePlannedDate) : null} onChange={(e) => setFormData({ ...formData, photoSamplePlannedDate: dateToStr(e.value) })} disabled={!isFieldEditable('photoSamplePlannedDate')} dateFormat="dd/mm/yy" className="flex-1" inputClassName="p-2 text-sm" />
                   <Dropdown value={formData.photoSamplePlannedStatus || 'Pending'} options={statusOptions} onChange={(e) => setFormData({ ...formData, photoSamplePlannedStatus: e.value })} disabled={!isFieldEditable('photoSamplePlannedStatus')} className="flex-1" placeholder="Select Status" />
                 </div>
+                {renderApprovalFields('photoSamplePlannedStatus', 'photoSampleApprovedBy', 'photoSampleApprovedDate')}
               </div>
             </div>
           </TabPanel>
@@ -775,6 +819,7 @@ const TrackerPage = () => {
                   <Calendar value={formData.plannedFPT ? new Date(formData.plannedFPT) : null} onChange={(e) => setFormData({ ...formData, plannedFPT: dateToStr(e.value) })} disabled={!isFieldEditable('plannedFPT')} dateFormat="dd/mm/yy" className="flex-1" inputClassName="p-2 text-sm" />
                   <Dropdown value={formData.plannedFPTStatus || 'Pending'} options={statusOptions} onChange={(e) => setFormData({ ...formData, plannedFPTStatus: e.value })} disabled={!isFieldEditable('plannedFPTStatus')} className="flex-1" placeholder="Select Status" />
                 </div>
+                {renderApprovalFields('plannedFPTStatus', 'plannedFPTApprovedBy', 'plannedFPTApprovedDate')}
               </div>
               <div className="field">
                 <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Planned GPT</label>
@@ -782,6 +827,7 @@ const TrackerPage = () => {
                   <Calendar value={formData.plannedGPT ? new Date(formData.plannedGPT) : null} onChange={(e) => setFormData({ ...formData, plannedGPT: dateToStr(e.value) })} disabled={!isFieldEditable('plannedGPT')} dateFormat="dd/mm/yy" className="flex-1" inputClassName="p-2 text-sm" />
                   <Dropdown value={formData.plannedGPTStatus || 'Pending'} options={statusOptions} onChange={(e) => setFormData({ ...formData, plannedGPTStatus: e.value })} disabled={!isFieldEditable('plannedGPTStatus')} className="flex-1" placeholder="Select Status" />
                 </div>
+                {renderApprovalFields('plannedGPTStatus', 'plannedGPTApprovedBy', 'plannedGPTApprovedDate')}
               </div>
               <div className="field">
                 <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>GSM/Color Due</label>
@@ -793,6 +839,7 @@ const TrackerPage = () => {
                   <Calendar value={formData.gsmColorLotsPlanned ? new Date(formData.gsmColorLotsPlanned) : null} onChange={(e) => setFormData({ ...formData, gsmColorLotsPlanned: dateToStr(e.value) })} disabled={!isFieldEditable('gsmColorLotsPlanned')} dateFormat="dd/mm/yy" className="flex-1" inputClassName="p-2 text-sm" />
                   <Dropdown value={formData.gsmColorLotsPlannedStatus || 'Pending'} options={statusOptions} onChange={(e) => setFormData({ ...formData, gsmColorLotsPlannedStatus: e.value })} disabled={!isFieldEditable('gsmColorLotsPlannedStatus')} className="flex-1" placeholder="Select Status" />
                 </div>
+                {renderApprovalFields('gsmColorLotsPlannedStatus', 'gsmColorLotsApprovedBy', 'gsmColorLotsApprovedDate')}
               </div>
             </div>
           </TabPanel>

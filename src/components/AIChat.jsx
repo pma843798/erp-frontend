@@ -45,8 +45,7 @@ const AIChat = () => {
         if (!input.trim()) return;
 
         const userMsg = input;
-        
-        // ✅ API bhejne ke liye current messages store kiye
+  
         const currentHistory = [...messages];
 
         setMessages((prev) => [
@@ -61,7 +60,7 @@ const AIChat = () => {
         setLoading(true);
 
         try {
-            // ✅ userMsg ke sath currentHistory bhi bhej di
+         
             const aiResponse = await askAiAssistant(userMsg, currentHistory);
 
             setMessages((prev) => [
@@ -84,9 +83,7 @@ const AIChat = () => {
         setLoading(false);
     };
 
-    // ======================================================
-    // 🚀 FLOATING BUTTON
-    // ======================================================
+   
 
     if (!isOpen) {
         return (
@@ -133,9 +130,7 @@ const AIChat = () => {
                 transition={{ duration: 0.3 }}
                 className="flex flex-col h-full w-full overflow-hidden rounded-3xl border border-gray-200 bg-white/95 backdrop-blur-2xl shadow-[0_10px_40px_rgba(0,0,0,0.08)]"
             >
-                {/* ======================================================
-                    HEADER
-                ====================================================== */}
+          
 
                 <div className="chat-header cursor-move px-5 py-4 bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 flex items-center justify-between border-b border-gray-200">
                     <div className="flex items-center gap-3">
@@ -178,9 +173,7 @@ const AIChat = () => {
                     </div>
                 </div>
 
-                {/* ======================================================
-                    CHAT AREA
-                ====================================================== */}
+             
 
                 <div className="flex-1 overflow-y-auto px-4 py-5 space-y-4 bg-gradient-to-b from-blue-50 to-white">
                     <AnimatePresence>
@@ -238,10 +231,7 @@ const AIChat = () => {
                     <div ref={messagesEndRef} />
                 </div>
 
-                {/* ======================================================
-                    INPUT AREA
-                ====================================================== */}
-
+           
                 <form
                     onSubmit={handleSend}
                     className="p-4 border-t border-gray-200 bg-gray-50 backdrop-blur-xl"

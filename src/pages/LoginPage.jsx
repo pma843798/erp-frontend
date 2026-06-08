@@ -30,17 +30,15 @@ const LoginPage = () => {
   const handleForgotPassword = (e) => {
     e.preventDefault();
     setShowContactAdmin(true);
-    // 4 second baad apne aap message hide ho jayega
+
     setTimeout(() => {
       setShowContactAdmin(false);
     }, 4000);
   };
 
   return (
-    <div className="min-h-screen flex bg-white">
-      
-      {/* --- LEFT SIDE: IMAGE BANNER (Hidden on small screens) --- */}
-      <div 
+    <div className="min-h-screen flex bg-white">  
+     <div 
         className="hidden lg:flex lg:w-1/2 relative overflow-hidden items-center justify-center bg-cover bg-center"
         style={{ backgroundImage: "url('https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=1920&q=80')" }}
       >
@@ -71,7 +69,6 @@ const LoginPage = () => {
         </div>
       </div>
 
-      {/* --- RIGHT SIDE: LOGIN FORM --- */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 sm:p-12 bg-slate-50">
         <div className="w-full max-w-md">
           
@@ -83,7 +80,6 @@ const LoginPage = () => {
             <p className="text-slate-500 mt-2 font-medium">Please enter your details to sign in.</p>
           </div>
 
-          {/* Error Message */}
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl mb-6 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
               <div className="w-2 h-2 bg-red-600 rounded-full shrink-0 animate-pulse"></div>
@@ -91,7 +87,6 @@ const LoginPage = () => {
             </div>
           )}
 
-          {/* ✅ FORGOT PASSWORD MESSAGE */}
           {showContactAdmin && (
             <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-xl mb-6 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
               <Info size={18} className="text-blue-500 shrink-0" />
@@ -101,7 +96,6 @@ const LoginPage = () => {
 
           <form onSubmit={handleSubmit} className="space-y-6">
             
-            {/* Email Input */}
             <div>
               <label className="block text-slate-700 text-sm font-bold mb-2">Email Address</label>
               <div className="relative group">
@@ -118,12 +112,10 @@ const LoginPage = () => {
                 />
               </div>
             </div>
-
-            {/* Password Input */}
             <div>
               <div className="flex justify-between items-center mb-2">
                 <label className="block text-slate-700 text-sm font-bold">Password</label>
-                {/* ✅ FORGOT PASSWORD BUTTON */}
+       
                 <button 
                   type="button" 
                   onClick={handleForgotPassword}
@@ -154,7 +146,6 @@ const LoginPage = () => {
               </div>
             </div>
 
-            {/* Submit Button */}
             <button
               type="submit"
               disabled={loading}

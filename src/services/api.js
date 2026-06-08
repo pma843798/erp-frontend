@@ -4,7 +4,6 @@ const api = axios.create({
   baseURL: 'https://erp-system-1-0yod.onrender.com/api',
 });
 
-// Interceptor: Har request ke sath token bhejne ke liye
 api.interceptors.request.use((config) => {
   const user = JSON.parse(localStorage.getItem('user'));
 
@@ -15,7 +14,7 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// AI Assistant API Call
+
 export const askAiAssistant = async (promptText) => {
   try {
     const response = await api.post('/ai/ask', {
