@@ -183,20 +183,6 @@ const Dashboard = () => {
       colors: darkMode ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-red-50 text-red-600 border-red-100'
     },
     {
-      id: 'hold',
-      title: 'On Hold',
-      value: stats.holdCount,
-      icon: <Clock3 size={20} />,
-      colors: darkMode ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' : 'bg-yellow-50 text-yellow-600 border-yellow-100'
-    },
-    {
-      id: 'urgent',
-      title: 'Urgent',
-      value: stats.urgentCount,
-      icon: <AlertTriangle size={20} />,
-      colors: darkMode ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' : 'bg-purple-50 text-purple-600 border-purple-100'
-    },
-    {
       id: 'health',
       title: 'Plan Dates Filled',
       value: `${completionRate.percent}%`,
@@ -275,7 +261,8 @@ const Dashboard = () => {
 
         <div className="flex-1 px-8 pb-8 overflow-y-auto flex flex-col">
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 gap-5 mb-6">
+          {/* Changed Grid to exactly 3 columns (since there are 6 cards now) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-5 mb-6">
             {cards.map((card, idx) => (
               <div 
                 key={idx} 
