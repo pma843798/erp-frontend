@@ -62,8 +62,7 @@ const TrackerPage = () => {
   const [currentEntryId, setCurrentEntryId] = useState(null);
 
   const [customCols, setCustomCols] = useState([]);
-  const [colDialog, setColDialog] = useState(false);
-  const [newColName, setNewColName] = useState('');
+  // Add column state removed
 
   const [renameDialog, setRenameDialog] = useState(false);
   const [colToRename, setColToRename] = useState('');
@@ -297,18 +296,7 @@ const TrackerPage = () => {
     });
   }, [selectedRows, handleDeleteSelected]);
 
-  const handleAddColumn = useCallback(() => {
-    if (!newColName.trim()) return;
-    const colName = newColName.trim();
-    if (standardFields.includes(colName) || customCols.includes(colName)) {
-      toast.current.show({ severity: 'warn', summary: 'Warning', detail: 'Column already exists!', life: 3000 });
-      return;
-    }
-    setCustomCols([...customCols, colName]);
-    setNewColName('');
-    setColDialog(false);
-    toast.current.show({ severity: 'success', summary: 'Column Added', detail: 'New column added.', life: 4000 });
-  }, [newColName, customCols]);
+  // handleAddColumn removed
 
   const handleRenameColumn = useCallback(async () => {
     if (!colToRename || !renamedColName.trim()) return;
@@ -527,9 +515,7 @@ const TrackerPage = () => {
       )}
       {isAdmin && (
         <div className="flex gap-2">
-          <button onClick={() => setColDialog(true)} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${darkMode ? 'text-indigo-300 border-indigo-500/30 hover:bg-indigo-500/10' : 'text-slate-700 bg-white border-gray-200 hover:bg-gray-50'}`}>
-            <Columns size={16} /> Add Column
-          </button>
+          {/* Add Column button removed */}
           <button onClick={() => setRenameDialog(true)} disabled={customCols.length === 0} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border disabled:opacity-50 ${darkMode ? 'text-indigo-300 border-indigo-500/30 hover:bg-indigo-500/10' : 'text-slate-700 bg-white border-gray-200 hover:bg-gray-50'}`}>
             <Edit3 size={16} /> Rename Column
           </button>
@@ -544,7 +530,7 @@ const TrackerPage = () => {
         </button>
       )}
     </div>
-  ), [isAdmin, isPMA, openNew, customCols, selectedRows, confirmDelete, darkMode, filter, clearFilter]);
+  ), [isAdmin, isPMA, openNew, customCols.length, selectedRows.length, confirmDelete, darkMode, filter, clearFilter]);
 
   const toolbarRight = useMemo(() => (
     <div className="flex gap-3 items-center flex-wrap">
@@ -773,15 +759,7 @@ const TrackerPage = () => {
         </div>
       </main>
 
-      {/* Dialogs - unchanged */}
-      <Dialog visible={colDialog} style={{ width: '400px' }} header="Add Custom Column" modal onHide={() => setColDialog(false)} className={darkMode ? 'dark-dialog' : ''}>
-        <div className="mt-4">
-          <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Column Header Name</label>
-          <InputText value={newColName} onChange={(e) => setNewColName(e.target.value)} placeholder="e.g. Courier Info" className={`w-full ${darkMode ? 'bg-white/5 border-white/10 text-white' : ''}`} onKeyDown={(e) => e.key === 'Enter' && handleAddColumn()} />
-          <button onClick={handleAddColumn} className="w-full mt-5 bg-[#0080ff] hover:bg-blue-600 text-white py-3 rounded-xl font-bold shadow-lg transition-all">Add to Ledger</button>
-        </div>
-      </Dialog>
-
+      {/* Rename Column Dialog - kept */}
       <Dialog visible={renameDialog} style={{ width: '400px' }} header="Rename Column" modal onHide={() => setRenameDialog(false)} className={darkMode ? 'dark-dialog' : ''}>
         <div className="mt-4 space-y-4">
           <div>
