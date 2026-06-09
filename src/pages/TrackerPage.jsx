@@ -17,13 +17,12 @@ import { MultiSelect } from 'primereact/multiselect';
 import { Checkbox } from 'primereact/checkbox';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
-import * as XLSX from 'xlsx';
-import { saveAs } from 'file-saver';
 import AIChat from '../components/AIChat';
 import {
   LayoutDashboard, LogOut, Plus, Trash2, Download, Printer,
   Sun, Moon, Columns, Edit3, Users, Database, Grid, FilterX
 } from 'lucide-react';
+import { exportMasterLedger, exportHistoryLog, exportCSV } from '../utils/excelExport';
 
 const standardFields = [
   '_id', 'createdAt', 'updatedAt', '__v', 'history',
@@ -41,18 +40,6 @@ const standardFields = [
 ];
 
 const ignoredColumns = ['LABDIPAPPROVEDBY', 'LABDIPAPPROVEDDATE'];
-
-const baseExcelHeaders = {
-  catNo: 'CAT NO', styleNo: 'Style No.', factoryFOB: 'Factory FOB',
-  vendorPhotoShootDate: 'PhotoShoot Date', labdipQualityDeskloomDue: 'Labdip Due',
-  labdipPlannedDate: 'Labdip Planned', labdipPlannedStatus: 'Labdip Status',
-  photoSampleDue: 'Photo Sample Due', photoSamplePlannedDate: 'Photo Sample Planned',
-  photoSamplePlannedStatus: 'Photo Sample Status', testReportDue: 'Test Report Due',
-  plannedFPT: 'Planned FPT', plannedFPTStatus: 'FPT Status',
-  plannedGPT: 'Planned GPT', plannedGPTStatus: 'GPT Status',
-  gsmColorLotsDue: 'GSM/Color Due', gsmColorLotsPlanned: 'GSM/Color Planned',
-  gsmColorLotsPlannedStatus: 'GSM/Color Status', remark: 'Remark'
-};
 
 const statusOptions = [
   { label: 'APPROVE', value: 'Approved' },
@@ -85,9 +72,8 @@ const TrackerPage = () => {
   const [hiddenColumns, setHiddenColumns] = useState([]);
   const [exportSelectedOnly, setExportSelectedOnly] = useState(false);
   const [confirmState, setConfirmState] = useState({ visible: false, message: '', accept: null });
-
-  // Filter from URL
   const [filter, setFilter] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const isAdmin = user?.role === 'admin';
   const isPMA = user?.role === 'pma';
@@ -114,7 +100,6 @@ const TrackerPage = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({});
 
-  // Read filter from URL
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const filterParam = params.get('filter');
@@ -207,13 +192,10 @@ const TrackerPage = () => {
     loadData();
   }, [loadData]);
 
-  // Filter logic
   const filteredData = useMemo(() => {
     if (!filter || filter === 'all') return data;
-    
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
     switch (filter) {
       case 'pending-gpt':
         return data.filter(item => item.plannedGPTStatus === 'Pending');
@@ -347,40 +329,20 @@ const TrackerPage = () => {
     }
   }, [colToRename, renamedColName, customCols, renameColumn, loadData]);
 
-  const prepareExportData = useCallback((rows) => {
-    const exportHeaders = { ...baseExcelHeaders };
-    customCols.forEach(col => exportHeaders[col] = col);
-    return rows.map(row => {
-      let cleanRow = {};
-      Object.keys(exportHeaders).forEach(key => {
-        const isDateType = key === 'factoryFOB' || key.toLowerCase().includes('date') || key.toLowerCase().includes('due') || key.includes('FPT') || key.includes('GPT');
-        cleanRow[exportHeaders[key]] = isDateType ? formatDate(row[key]) : row[key];
-      });
-      return cleanRow;
-    });
-  }, [customCols, formatDate]);
-
-  const exportExcel = useCallback(() => {
+  const handleExportMasterLedger = useCallback(() => {
     const rows = exportSelectedOnly && selectedRows.length ? selectedRows : filteredData;
-    const formatted = prepareExportData(rows);
-    const worksheet = XLSX.utils.json_to_sheet(formatted);
-    const colWidths = Object.keys(formatted[0] || {}).map(key => ({ wch: Math.max(key.length + 5, 15) }));
-    worksheet['!cols'] = colWidths;
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Master Ledger');
-    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-    saveAs(new Blob([excelBuffer], { type: 'application/octet-stream' }), 'erp-master-ledger.xlsx');
-    toast.current.show({ severity: 'success', summary: 'Exported', detail: 'Excel exported successfully', life: 2000 });
-  }, [filteredData, selectedRows, exportSelectedOnly, prepareExportData]);
+    exportMasterLedger(rows, customCols, toast);
+  }, [filteredData, selectedRows, exportSelectedOnly, customCols]);
 
-  const exportCSV = useCallback(() => {
+  const handleExportHistoryLog = useCallback(() => {
     const rows = exportSelectedOnly && selectedRows.length ? selectedRows : filteredData;
-    const formatted = prepareExportData(rows);
-    const worksheet = XLSX.utils.json_to_sheet(formatted);
-    const csv = XLSX.utils.sheet_to_csv(worksheet);
-    saveAs(new Blob([csv], { type: 'text/csv' }), 'erp-master-ledger.csv');
-    toast.current.show({ severity: 'success', summary: 'Exported', detail: 'CSV exported successfully', life: 2000 });
-  }, [filteredData, selectedRows, exportSelectedOnly, prepareExportData]);
+    exportHistoryLog(rows, customCols, toast);
+  }, [filteredData, selectedRows, exportSelectedOnly, customCols]);
+
+  const handleExportCSV = useCallback(() => {
+    const rows = exportSelectedOnly && selectedRows.length ? selectedRows : filteredData;
+    exportCSV(rows, customCols, toast);
+  }, [filteredData, selectedRows, exportSelectedOnly, customCols]);
 
   const showCellHistory = useCallback((e, field, rowData) => {
     setCurrentEntryId(rowData._id);
@@ -437,7 +399,6 @@ const TrackerPage = () => {
     'gsmColorLotsPlannedStatus': { by: 'gsmColorLotsApprovedBy', date: 'gsmColorLotsApprovedDate' }
   }), []);
 
-  // Clickable body for date columns
   const createClickableBody = useCallback((field, isDate = false) => (rowData) => {
     const val = rowData[field];
     const isDateField = (field === 'factoryFOB') || isDate;
@@ -472,7 +433,6 @@ const TrackerPage = () => {
     );
   }, [darkMode, formatDate, showCellHistory]);
 
-  // Status body with approval details
   const createStatusBody = useCallback((field) => (rowData) => {
     const status = rowData[field] || 'Pending';
     const hasHistory = rowData.history && rowData.history.some(h => h.field === field);
@@ -587,15 +547,18 @@ const TrackerPage = () => {
   ), [isAdmin, isPMA, openNew, customCols, selectedRows, confirmDelete, darkMode, filter, clearFilter]);
 
   const toolbarRight = useMemo(() => (
-    <div className="flex gap-3 items-center">
+    <div className="flex gap-3 items-center flex-wrap">
       <div className="flex items-center gap-2">
         <Checkbox inputId="exportSelected" checked={exportSelectedOnly} onChange={e => setExportSelectedOnly(e.checked)} disabled={selectedRows.length === 0} />
         <label htmlFor="exportSelected" className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Export Selected</label>
       </div>
-      <button onClick={exportExcel} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}>
-        <Download size={16} /> Excel
+      <button onClick={handleExportMasterLedger} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}>
+        <Download size={16} /> Excel (Ledger)
       </button>
-      <button onClick={exportCSV} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}>
+      <button onClick={handleExportHistoryLog} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}>
+        <Download size={16} /> Excel (History)
+      </button>
+      <button onClick={handleExportCSV} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}>
         <Download size={16} /> CSV
       </button>
       <button onClick={() => window.print()} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}>
@@ -612,7 +575,7 @@ const TrackerPage = () => {
         />
       )}
     </div>
-  ), [exportSelectedOnly, selectedRows, exportExcel, exportCSV, isAdmin, allColumnDefs, darkMode]);
+  ), [exportSelectedOnly, selectedRows, handleExportMasterLedger, handleExportHistoryLog, handleExportCSV, isAdmin, allColumnDefs, darkMode]);
 
   const dialogFooter = useMemo(() => (
     <div className="flex justify-end gap-3 mt-4">
@@ -629,7 +592,10 @@ const TrackerPage = () => {
 
   const NavItem = useCallback(({ icon: Icon, label, path, active }) => (
     <button
-      onClick={() => navigate(path)}
+      onClick={() => {
+        navigate(path);
+        setSidebarOpen(false);
+      }}
       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${active
         ? 'bg-[#0080ff] text-white shadow-md'
         : (darkMode ? 'text-gray-400 hover:bg-white/5 hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900')
@@ -672,49 +638,74 @@ const TrackerPage = () => {
     );
   };
 
+  const hasData = filteredData.length > 0;
+
   return (
-    <div className={`flex h-screen w-full transition-all duration-300 overflow-hidden ${darkMode ? 'bg-[#0f172a] text-white' : 'bg-[#f4f7fb] text-slate-900'}`}>
+    <div className={`flex h-screen w-full ${darkMode ? 'bg-[#0f172a] text-white' : 'bg-[#f4f7fb] text-slate-900'}`}>
       <Toast ref={toast} />
       <ConfirmDialog visible={confirmState.visible} onHide={() => setConfirmState(prev => ({ ...prev, visible: false }))} message={confirmState.message}
         header="Confirmation" icon="pi pi-exclamation-triangle" accept={confirmState.accept} />
 
-      <aside className={`w-[260px] h-full flex flex-col justify-between border-r shrink-0 transition-all ${darkMode ? 'bg-[#1e293b] border-gray-800' : 'bg-white border-gray-200 shadow-sm'}`}>
-        <div>
-          <div className="p-6 pb-8 border-b border-transparent">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#00a2ff] flex items-center justify-center shadow-md text-white"><Grid size={20} /></div>
-              <div><h1 className="text-xl font-extrabold tracking-tight leading-none">PMA</h1><p className={`text-[11px] font-medium mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Dashboard Panel</p></div>
+      {/* Sidebar - fixed overlay, only when data exists */}
+      {hasData && (
+        <>
+          {sidebarOpen && (
+            <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setSidebarOpen(false)} />
+          )}
+          <aside
+            className={`fixed top-0 left-0 z-50 w-[260px] h-full flex flex-col justify-between transition-transform duration-300 ease-in-out transform
+              ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+              ${darkMode ? 'bg-[#1e293b] border-gray-800' : 'bg-white border-gray-200 shadow-sm'}
+              border-r`}
+          >
+            <div>
+              <div className="p-6 pb-8 border-b border-transparent flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#00a2ff] flex items-center justify-center shadow-md text-white"><Grid size={20} /></div>
+                  <div><h1 className="text-xl font-extrabold tracking-tight leading-none">PMA</h1><p className={`text-[11px] font-medium mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Dashboard Panel</p></div>
+                </div>
+                <button onClick={() => setSidebarOpen(false)} className="lg:hidden text-gray-500 hover:text-gray-700 dark:text-gray-400">✕</button>
+              </div>
+              <div className="px-4 flex flex-col gap-2 mt-4">
+                <NavItem icon={LayoutDashboard} label="Dashboard" path="/dashboard" active={false} />
+                <NavItem icon={Database} label="All Entries" path="/tracker" active={true} />
+                {isAdmin && <NavItem icon={Users} label="Users" path="/users" active={false} />}
+              </div>
             </div>
-          </div>
-          <div className="px-4 flex flex-col gap-2 mt-4">
-            <NavItem icon={LayoutDashboard} label="Dashboard" path="/dashboard" active={false} />
-            <NavItem icon={Database} label="All Entries" path="/tracker" active={true} />
-            {isAdmin && <NavItem icon={Users} label="Users" path="/users" active={false} />}
-          </div>
-        </div>
-        <div className="p-4">
-          <div className={`p-4 rounded-2xl mb-3 border ${darkMode ? 'bg-white/5 border-white/10' : 'bg-white border-gray-100 shadow-sm'}`}>
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-[#0080ff] text-white flex items-center justify-center font-bold text-lg">{user?.name?.charAt(0).toUpperCase() || 'A'}</div>
-              <div><p className="font-bold text-sm leading-tight">{user?.name || 'Admin'}</p><p className={`text-xs capitalize ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{user?.role || 'Admin'}</p></div>
+            <div className="p-4">
+              <div className={`p-4 rounded-2xl mb-3 border ${darkMode ? 'bg-white/5 border-white/10' : 'bg-white border-gray-100 shadow-sm'}`}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-[#0080ff] text-white flex items-center justify-center font-bold text-lg">{user?.name?.charAt(0).toUpperCase() || 'A'}</div>
+                  <div><p className="font-bold text-sm leading-tight">{user?.name || 'Admin'}</p><p className={`text-xs capitalize ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{user?.role || 'Admin'}</p></div>
+                </div>
+              </div>
+              <button onClick={() => { logout(); navigate('/login'); }} className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl transition-all font-bold bg-[#f14646] text-white hover:bg-red-600 shadow-sm"><LogOut size={18} /> Logout</button>
             </div>
-          </div>
-          <button onClick={() => { logout(); navigate('/login'); }} className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl transition-all font-bold bg-[#f14646] text-white hover:bg-red-600 shadow-sm"><LogOut size={18} /> Logout</button>
-        </div>
-      </aside>
+          </aside>
+        </>
+      )}
 
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative">
-        <header className="px-8 py-6 flex justify-between items-start shrink-0">
-          <div>
-            <h2 className="text-2xl font-extrabold flex items-center gap-2">Master Ledger 📋</h2>
-            <p className={`mt-1 text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Manage all production entries, columns, and history logs.</p>
-            <div className="flex gap-4 mt-2">
-              <span className={`px-3 py-1 rounded-full text-xs font-bold ${darkMode ? 'bg-cyan-500/20 text-cyan-300' : 'bg-cyan-100 text-cyan-800'}`}>
-                Total: {totalEntries}
-              </span>
-              <span className={`px-3 py-1 rounded-full text-xs font-bold ${darkMode ? 'bg-orange-500/20 text-orange-300' : 'bg-orange-100 text-orange-800'}`}>
-                Pending: {pendingCount}
-              </span>
+      <main className="flex-1 flex flex-col h-full overflow-hidden">
+        <header className="px-4 md:px-8 py-4 md:py-6 flex justify-between items-center shrink-0">
+          <div className="flex items-center gap-3">
+            {hasData && (
+              <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+            )}
+            <div>
+              <h2 className="text-2xl font-extrabold flex items-center gap-2">Master Ledger 📋</h2>
+              <p className={`mt-1 text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Manage all production entries, columns, and history logs.</p>
+              <div className="flex gap-4 mt-2">
+                <span className={`px-3 py-1 rounded-full text-xs font-bold ${darkMode ? 'bg-cyan-500/20 text-cyan-300' : 'bg-cyan-100 text-cyan-800'}`}>
+                  Total: {totalEntries}
+                </span>
+                <span className={`px-3 py-1 rounded-full text-xs font-bold ${darkMode ? 'bg-orange-500/20 text-orange-300' : 'bg-orange-100 text-orange-800'}`}>
+                  Pending: {pendingCount}
+                </span>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-4">
@@ -723,7 +714,7 @@ const TrackerPage = () => {
           </div>
         </header>
 
-        <div className="flex-1 px-8 pb-8 overflow-hidden flex flex-col">
+        <div className="flex-1 px-4 md:px-8 pb-8 overflow-hidden flex flex-col">
           <Toolbar left={toolbarLeft} right={toolbarRight} className={`mb-4 rounded-xl border-none shadow-sm ${darkMode ? 'bg-[#1e293b]' : 'bg-white'}`} />
 
           <div className={`transition-all rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col border ${darkMode ? 'bg-[#1e293b] border-gray-800' : 'bg-white border-gray-100'}`} style={{ height: '100%', minHeight: 0 }}>
@@ -782,6 +773,7 @@ const TrackerPage = () => {
         </div>
       </main>
 
+      {/* Dialogs - unchanged */}
       <Dialog visible={colDialog} style={{ width: '400px' }} header="Add Custom Column" modal onHide={() => setColDialog(false)} className={darkMode ? 'dark-dialog' : ''}>
         <div className="mt-4">
           <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Column Header Name</label>
@@ -822,7 +814,7 @@ const TrackerPage = () => {
                     <th className="p-2">Old Value</th>
                     <th className="p-2">New Value</th>
                     <th className="p-2">Changed By</th>
-                    <th className="p-2"> Approved Date & Time</th>
+                    <th className="p-2">Changed Date & Time</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700">
@@ -870,11 +862,6 @@ const TrackerPage = () => {
                   autoResize
                   disabled={!isFieldEditable('remark')}
                   className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.stopPropagation();
-                    }
-                  }}
                 />
               </div>
               {customCols.map(col => (
@@ -885,7 +872,6 @@ const TrackerPage = () => {
               ))}
             </div>
           </TabPanel>
-
           <TabPanel header="Labdip & Photo">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-2">
               <div className="field md:col-span-2">
@@ -920,7 +906,6 @@ const TrackerPage = () => {
               </div>
             </div>
           </TabPanel>
-
           <TabPanel header="Test, FPT, GPT & GSM">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-2">
               <div className="field md:col-span-2">

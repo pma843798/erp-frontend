@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Mail, Lock, Eye, EyeOff, ArrowRight, Grid, Loader2, Info } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, Grid, Loader2, Info, CheckCircle } from 'lucide-react';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
@@ -9,7 +9,7 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showContactAdmin, setShowContactAdmin] = useState(false); // ✅ Naya state forgot password ke liye
+  const [showContactAdmin, setShowContactAdmin] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -33,47 +33,55 @@ const LoginPage = () => {
 
     setTimeout(() => {
       setShowContactAdmin(false);
-    }, 4000);
+    }, 5000);
   };
 
   return (
-    <div className="min-h-screen flex bg-white">  
-     <div 
+    <div className="min-h-screen flex bg-white selection:bg-cyan-500 selection:text-white">
+      {/* Left Side - Professional Collaborative Panel */}
+      <div
         className="hidden lg:flex lg:w-1/2 relative overflow-hidden items-center justify-center bg-cover bg-center"
-        style={{ backgroundImage: "url('https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=1920&q=80')" }}
+        style={{ backgroundImage: "url('https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1920&q=80')" }}
       >
-        <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/80 to-blue-900/60 backdrop-blur-[2px]"></div>
+        {/* High-End Abstract Blur Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900/90 to-blue-950/80 backdrop-blur-[2px]"></div>
 
+        {/* Content over Image */}
         <div className="relative z-10 p-12 text-white max-w-lg">
-          <div className="w-16 h-16 bg-white/10 rounded-2xl backdrop-blur-md flex items-center justify-center mb-8 border border-white/20 shadow-2xl">
-            <Grid size={32} className="text-white" />
+          <div className="w-16 h-16 bg-white/10 rounded-3xl backdrop-blur-md flex items-center justify-center mb-8 border border-white/20 shadow-2xl">
+            <Grid size={32} className="text-cyan-400" />
           </div>
-          <h1 className="text-5xl font-extrabold tracking-tight mb-6 leading-tight">
-            Production tracking, <br/>
+          
+          {/* ✅ UPDATED TEXT HERE */}
+          <h1 className="text-5xl font-extrabold tracking-tight mb-6 leading-[1.1]">
+            Premier Asia, <br/>
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 to-blue-200">
-              reimagined.
+              Smart workflow.
             </span>
           </h1>
           <p className="text-lg text-slate-300 leading-relaxed font-medium">
-            Streamline your garment ERP workflow, manage vendors seamlessly, and hit every deadline with precision.
+            Streamline your garment ERP with smart workflows, manage vendors seamlessly, and hit every deadline with precision.
           </p>
           
           <div className="flex items-center gap-4 mt-12">
             <div className="flex -space-x-3">
-              <div className="w-10 h-10 rounded-full border-2 border-slate-800 bg-blue-500"></div>
-              <div className="w-10 h-10 rounded-full border-2 border-slate-800 bg-indigo-500"></div>
-              <div className="w-10 h-10 rounded-full border-2 border-slate-800 bg-cyan-500"></div>
+              <div className="w-10 h-10 rounded-full border-2 border-slate-900 bg-blue-500"></div>
+              <div className="w-10 h-10 rounded-full border-2 border-slate-900 bg-indigo-500"></div>
+              <div className="w-10 h-10 rounded-full border-2 border-slate-900 bg-cyan-500"></div>
             </div>
-            <p className="text-sm text-slate-400 font-medium">Trusted by top manufacturers</p>
+            {/* ✅ UPDATED TRUST BADGE TEXT */}
+            <p className="text-sm text-slate-400 font-medium">Trusted by top manufacturers across Asia</p>
           </div>
         </div>
       </div>
 
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 sm:p-12 bg-slate-50">
-        <div className="w-full max-w-md">
+      {/* Right Side - Clean Login Form */}
+      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 sm:p-12 bg-slate-50 relative">
+        
+        <div className="w-full max-w-md bg-white p-10 rounded-3xl shadow-xl shadow-slate-100 border border-slate-100">
           
-          <div className="text-center lg:text-left mb-10">
-            <div className="lg:hidden w-14 h-14 bg-[#0080ff] rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg shadow-blue-500/30">
+          <div className="text-center mb-10">
+            <div className="w-14 h-14 bg-[#0080ff] rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg shadow-blue-500/30">
               <Grid size={28} className="text-white" />
             </div>
             <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Welcome back</h2>
@@ -81,14 +89,14 @@ const LoginPage = () => {
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl mb-6 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+            <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-2xl mb-6 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
               <div className="w-2 h-2 bg-red-600 rounded-full shrink-0 animate-pulse"></div>
               <p className="text-sm font-semibold">{error}</p>
             </div>
           )}
 
           {showContactAdmin && (
-            <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-xl mb-6 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
+            <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-2xl mb-6 flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
               <Info size={18} className="text-blue-500 shrink-0" />
               <p className="text-sm font-semibold">Please contact your Admin to reset the password.</p>
             </div>
@@ -104,8 +112,8 @@ const LoginPage = () => {
                 </div>
                 <input
                   type="email"
-                  placeholder="admin@erp.com"
-                  className="w-full pl-11 pr-4 py-3.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium text-slate-900 shadow-sm placeholder:text-slate-400"
+                  placeholder="Example@gmail.com"
+                  className="w-full pl-11 pr-4 py-3.5 bg-slate-50/50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium text-slate-900 shadow-sm placeholder:text-slate-400"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -131,7 +139,7 @@ const LoginPage = () => {
                 <input
                   type={showPassword ? "text" : "password"}
                   placeholder="••••••••"
-                  className="w-full pl-11 pr-12 py-3.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium text-slate-900 shadow-sm placeholder:text-slate-400"
+                  className="w-full pl-11 pr-12 py-3.5 bg-slate-50/50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium text-slate-900 shadow-sm placeholder:text-slate-400"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -168,7 +176,14 @@ const LoginPage = () => {
               )}
             </button>
           </form>
+        </div>
 
+        {/* Developed by Footer */}
+        <div className="absolute bottom-6 left-0 right-0 text-center">
+          <p className="text-xs text-slate-400 font-mono flex items-center justify-center gap-1.5">
+            <CheckCircle size={14} className="text-cyan-600" />
+            Developed by <strong className="text-slate-500">NIK-TECH</strong>
+          </p>
         </div>
       </div>
     </div>
