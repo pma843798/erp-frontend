@@ -5,7 +5,7 @@ import Dashboard from './pages/Dashboard';
 import TrackerPage from './pages/TrackerPage';
 import UserManagement from './pages/UserManagement';
 import ProtectedRoute from './components/ProtectedRoute';
-import { Analytics } from "@vercel/analytics/react"
+import { Analytics } from "@vercel/analytics/react";
 
 function App() {
   return (
