@@ -106,27 +106,6 @@ const Dashboard = () => {
     navigate(`/tracker?filter=${filterType}`);
   };
 
-  const getStatusBadgeStyles = (status) => {
-    const s = status || 'Pending';
-    if (['Approved', 'Completed'].includes(s)) return darkMode ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-green-50 text-green-700 border-green-200';
-    if (['Hold', 'Rejected'].includes(s)) return darkMode ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-red-50 text-red-700 border-red-200';
-    return darkMode ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30' : 'bg-yellow-50 text-yellow-700 border-yellow-200';
-  };
-
-  const statusDateTemplate = (rowData, field, statusField) => {
-    const dateStr = rowData[field];
-    const statusStr = rowData[statusField] || 'Pending';
-
-    return (
-      <div className="flex flex-col gap-1 items-start">
-        <span className="font-medium">{dateStr ? formatDate(dateStr) : '-'}</span>
-        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide border ${getStatusBadgeStyles(statusStr)}`}>
-          [ {statusStr} ]
-        </span>
-      </div>
-    );
-  };
-
   const actionBodyTemplate = () => (
     <button onClick={() => navigate('/tracker')} className={`p-2 rounded-lg transition-colors ${darkMode ? 'bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`} title="Go to entry">
       <ArrowRight size={16} />
@@ -331,12 +310,9 @@ const Dashboard = () => {
             <div className="flex-1">
               <DataTable value={recentEntries} responsiveLayout="scroll" className={`p-datatable-lg border-none ${darkMode ? 'custom-dark-table' : ''}`} emptyMessage="No recent entries found.">
                 <Column field="styleNo" header="Style No." className="font-semibold" />
-                <Column field="factoryFOB" header="FOB" body={(rowData) => formatDate(rowData.factoryFOB)} />
-                <Column field="plannedFPT" header="Planned FPT" body={(rowData) => statusDateTemplate(rowData, 'plannedFPT', 'plannedFPTStatus')} />
-                <Column field="plannedGPT" header="Planned GPT" body={(rowData) => statusDateTemplate(rowData, 'plannedGPT', 'plannedGPTStatus')} />
-                
-                {/* Columns Removed */}
-                
+                <Column field="factoryFOB" header="FOB Date" body={(rowData) => formatDate(rowData.factoryFOB)} />
+                <Column field="plannedFPT" header="FPT Planned" body={(rowData) => formatDate(rowData.plannedFPT)} />
+                <Column field="plannedGPT" header="GPT Planned" body={(rowData) => formatDate(rowData.plannedGPT)} />
                 <Column header="Actions" body={actionBodyTemplate} style={{ width: '80px', textAlign: 'center' }} />
               </DataTable>
             </div>

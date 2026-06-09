@@ -1,11 +1,12 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { DataTable } from 'primereact/datatable';
 import { Column } from 'primereact/column';
 import { Dialog } from 'primereact/dialog';
 import { Button } from 'primereact/button';
 import { Toolbar } from 'primereact/toolbar';
 import { InputText } from 'primereact/inputtext';
+import { InputTextarea } from 'primereact/inputtextarea';
 import { Calendar } from 'primereact/calendar';
 import { Dropdown } from 'primereact/dropdown';
 import { Toast } from 'primereact/toast';
@@ -21,7 +22,7 @@ import { saveAs } from 'file-saver';
 import AIChat from '../components/AIChat';
 import {
   LayoutDashboard, LogOut, Plus, Trash2, Download, Printer,
-  Sun, Moon, Columns, Edit3, Users, Database, Grid
+  Sun, Moon, Columns, Edit3, Users, Database, Grid, FilterX
 } from 'lucide-react';
 
 const standardFields = [
@@ -53,11 +54,16 @@ const baseExcelHeaders = {
   gsmColorLotsPlannedStatus: 'GSM/Color Status', remark: 'Remark'
 };
 
-const statusOptions = ['Pending', 'In Progress', 'Approved', 'Completed', 'Hold', 'Rejected'];
+const statusOptions = [
+  { label: 'APPROVE', value: 'Approved' },
+  { label: 'PENDING', value: 'Pending' },
+  { label: 'REJECT', value: 'Rejected' }
+];
 
 const TrackerPage = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useRef(null);
   const op = useRef(null);
 
@@ -79,6 +85,9 @@ const TrackerPage = () => {
   const [hiddenColumns, setHiddenColumns] = useState([]);
   const [exportSelectedOnly, setExportSelectedOnly] = useState(false);
   const [confirmState, setConfirmState] = useState({ visible: false, message: '', accept: null });
+
+  // Filter from URL
+  const [filter, setFilter] = useState(null);
 
   const isAdmin = user?.role === 'admin';
   const isPMA = user?.role === 'pma';
@@ -104,6 +113,13 @@ const TrackerPage = () => {
   const [formDialog, setFormDialog] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({});
+
+  // Read filter from URL
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const filterParam = params.get('filter');
+    setFilter(filterParam);
+  }, [location.search]);
 
   const fetchData = useCallback(async () => {
     const { data } = await api.get('/tracker');
@@ -190,6 +206,45 @@ const TrackerPage = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // Filter logic
+  const filteredData = useMemo(() => {
+    if (!filter || filter === 'all') return data;
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    switch (filter) {
+      case 'pending-gpt':
+        return data.filter(item => item.plannedGPTStatus === 'Pending');
+      case 'pending-fpt':
+        return data.filter(item => item.plannedFPTStatus === 'Pending');
+      case 'approved':
+        return data.filter(item => 
+          item.labdipPlannedStatus === 'Approved' ||
+          item.photoSamplePlannedStatus === 'Approved' ||
+          item.plannedFPTStatus === 'Approved' ||
+          item.plannedGPTStatus === 'Approved' ||
+          item.gsmColorLotsPlannedStatus === 'Approved'
+        );
+      case 'delayed':
+        return data.filter(item => {
+          const dueDate = new Date(item.labdipQualityDeskloomDue);
+          return dueDate < today && item.labdipPlannedStatus !== 'Approved';
+        });
+      case 'hold':
+        return data.filter(item => item.pendingStatus === 'Hold');
+      case 'urgent':
+        return data.filter(item => item.priority === 'Urgent');
+      default:
+        return data;
+    }
+  }, [data, filter]);
+
+  const clearFilter = () => {
+    navigate('/tracker');
+    setFilter(null);
+  };
 
   const openNew = useCallback(() => {
     setIsEditing(false);
@@ -306,7 +361,7 @@ const TrackerPage = () => {
   }, [customCols, formatDate]);
 
   const exportExcel = useCallback(() => {
-    const rows = exportSelectedOnly && selectedRows.length ? selectedRows : data;
+    const rows = exportSelectedOnly && selectedRows.length ? selectedRows : filteredData;
     const formatted = prepareExportData(rows);
     const worksheet = XLSX.utils.json_to_sheet(formatted);
     const colWidths = Object.keys(formatted[0] || {}).map(key => ({ wch: Math.max(key.length + 5, 15) }));
@@ -316,16 +371,16 @@ const TrackerPage = () => {
     const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     saveAs(new Blob([excelBuffer], { type: 'application/octet-stream' }), 'erp-master-ledger.xlsx');
     toast.current.show({ severity: 'success', summary: 'Exported', detail: 'Excel exported successfully', life: 2000 });
-  }, [data, selectedRows, exportSelectedOnly, prepareExportData]);
+  }, [filteredData, selectedRows, exportSelectedOnly, prepareExportData]);
 
   const exportCSV = useCallback(() => {
-    const rows = exportSelectedOnly && selectedRows.length ? selectedRows : data;
+    const rows = exportSelectedOnly && selectedRows.length ? selectedRows : filteredData;
     const formatted = prepareExportData(rows);
     const worksheet = XLSX.utils.json_to_sheet(formatted);
     const csv = XLSX.utils.sheet_to_csv(worksheet);
     saveAs(new Blob([csv], { type: 'text/csv' }), 'erp-master-ledger.csv');
     toast.current.show({ severity: 'success', summary: 'Exported', detail: 'CSV exported successfully', life: 2000 });
-  }, [data, selectedRows, exportSelectedOnly, prepareExportData]);
+  }, [filteredData, selectedRows, exportSelectedOnly, prepareExportData]);
 
   const showCellHistory = useCallback((e, field, rowData) => {
     setCurrentEntryId(rowData._id);
@@ -362,16 +417,15 @@ const TrackerPage = () => {
 
   const getStatusBadgeStyles = useCallback((status) => {
     const s = status || 'Pending';
-    if (['Approved', 'Completed'].includes(s)) return darkMode ? 'bg-green-500/10 text-green-400 border-green-500/30' : 'bg-green-50 text-green-700 border-green-200';
-    if (['Hold', 'Rejected'].includes(s)) return darkMode ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-red-50 text-red-700 border-red-200';
-    return darkMode ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30' : 'bg-yellow-50 text-yellow-700 border-yellow-200';
+    if (s === 'Approved') return darkMode ? 'bg-green-500/20 text-green-400 border-green-500/40' : 'bg-green-100 text-green-800 border-green-300';
+    if (s === 'Rejected') return darkMode ? 'bg-red-500/20 text-red-400 border-red-500/40' : 'bg-red-100 text-red-800 border-red-300';
+    return darkMode ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40' : 'bg-yellow-100 text-yellow-800 border-yellow-300';
   }, [darkMode]);
 
   const rowClassName = useCallback((rowData) => {
     const status = rowData.pendingStatus;
-    if (status === 'Hold') return darkMode ? 'row-hold-dark' : 'row-hold-light';
     if (status === 'Rejected') return darkMode ? 'row-rejected-dark' : 'row-rejected-light';
-    if (status === 'Approved' || status === 'Completed') return darkMode ? 'row-done-dark' : 'row-done-light';
+    if (status === 'Approved') return darkMode ? 'row-done-dark' : 'row-done-light';
     return '';
   }, [darkMode]);
 
@@ -383,68 +437,90 @@ const TrackerPage = () => {
     'gsmColorLotsPlannedStatus': { by: 'gsmColorLotsApprovedBy', date: 'gsmColorLotsApprovedDate' }
   }), []);
 
-  const createClickableBody = useCallback((field, isDate = false, statusField = null) => (rowData) => {
-  let val = rowData[field];
-  const isDateField = (field === 'factoryFOB') || isDate;
+  // Clickable body for date columns
+  const createClickableBody = useCallback((field, isDate = false) => (rowData) => {
+    const val = rowData[field];
+    const isDateField = (field === 'factoryFOB') || isDate;
+    const display = isDateField && val ? formatDate(val) : (val !== undefined && val !== null && val !== 'None' ? String(val) : '');
+    const hasHistory = rowData.history && rowData.history.some(h => {
+      if (h.field !== field) return false;
+      let rawOld = h.oldValue === 'None' || h.oldValue === null || h.oldValue === undefined || h.oldValue === '' ? '' : h.oldValue;
+      let rawNew = h.newValue === 'None' || h.newValue === null || h.newValue === undefined || h.newValue === '' ? '' : h.newValue;
+      if (!rawOld && rawNew) return false;
+      const fOld = isDateField && rawOld ? formatDate(rawOld) : String(rawOld);
+      const fNew = isDateField && rawNew ? formatDate(rawNew) : String(rawNew);
+      return fOld !== fNew;
+    });
+    return (
+      <div className="flex items-center gap-2">
+        <span
+          className={`cursor-pointer transition-all flex items-center font-medium px-2 py-1 rounded-lg text-sm ${
+            hasHistory
+              ? (darkMode ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'bg-orange-100 text-orange-700 border border-orange-200')
+              : (darkMode ? 'hover:text-cyan-400' : 'hover:text-blue-600')
+          }`}
+          onClick={(e) => {
+            e.stopPropagation();
+            showCellHistory(e, field, rowData);
+          }}
+          title={hasHistory ? "Updated recently" : "View History"}
+        >
+          {display || '-'}
+          {hasHistory && <div className="w-2 h-2 rounded-full bg-orange-500 ml-2 animate-pulse" />}
+        </span>
+      </div>
+    );
+  }, [darkMode, formatDate, showCellHistory]);
 
-  const display = isDateField && val ? formatDate(val) : (val !== undefined && val !== null && val !== 'None' ? String(val) : '');
+  // Status body with approval details
+  const createStatusBody = useCallback((field) => (rowData) => {
+    const status = rowData[field] || 'Pending';
+    const hasHistory = rowData.history && rowData.history.some(h => h.field === field);
+    let displayStatus = status;
+    if (status === 'Approved') displayStatus = 'APPROVE';
+    else if (status === 'Pending') displayStatus = 'PENDING';
+    else if (status === 'Rejected') displayStatus = 'REJECT';
+    else displayStatus = status.toUpperCase();
 
-  // For dot: same ignore‑initial logic
-  const hasHistory = rowData.history && rowData.history.some(h => {
-    if (h.field !== field) return false;
-    let rawOld = h.oldValue === 'None' || h.oldValue === null || h.oldValue === undefined || h.oldValue === '' ? '' : h.oldValue;
-    let rawNew = h.newValue === 'None' || h.newValue === null || h.newValue === undefined || h.newValue === '' ? '' : h.newValue;
-    if (!rawOld && rawNew) return false;
-    const fOld = isDateField && rawOld ? formatDate(rawOld) : String(rawOld);
-    const fNew = isDateField && rawNew ? formatDate(rawNew) : String(rawNew);
-    return fOld !== fNew;
-  });
+    const approvalInfo = approvalFieldsMap[field];
+    const approvedBy = approvalInfo && rowData[approvalInfo.by];
+    const approvedDate = approvalInfo && rowData[approvalInfo.date];
 
-  return (
-    <div className="flex items-start justify-start gap-3 whitespace-nowrap">
-      <span
-        className={`cursor-pointer transition-all flex items-center font-medium p-1 rounded-lg text-sm mt-0.5 ${
-          hasHistory
-            ? (darkMode ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'bg-orange-100 text-orange-700 border border-orange-200')
-            : (darkMode ? 'hover:text-cyan-400' : 'hover:text-blue-600')
-        }`}
-        onClick={(e) => {
-          e.stopPropagation();
-          showCellHistory(e, field, rowData);
-        }}
-        title={hasHistory ? "Updated recently" : "View History"}
-      >
-        {display || '-'}
-        {hasHistory && <div className="w-2 h-2 rounded-full bg-orange-500 shrink-0 ml-2 animate-pulse" />}
-      </span>
-
-      {statusField && (
-        <div className="flex flex-col gap-0.5 items-start">
-          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border inline-block ${getStatusBadgeStyles(rowData[statusField])}`}>
-            {rowData[statusField] || 'Pending'}
+    return (
+      <div className="flex flex-col items-start gap-2">
+        <div className="flex items-center gap-2">
+          <span className={`px-3 py-1 rounded-full text-xs font-bold border inline-flex items-center gap-1 ${getStatusBadgeStyles(status)}`}>
+            {displayStatus}
+            {hasHistory && (
+              <div
+                className="w-2 h-2 rounded-full bg-orange-500 cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  showCellHistory(e, field, rowData);
+                }}
+                title="View status change history"
+              />
+            )}
           </span>
-
-        {rowData[statusField] === 'Approved' && approvalFieldsMap[statusField] && rowData[approvalFieldsMap[statusField].by] && (
-  <span className={`text-[9px] leading-tight flex flex-col ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-    <span>{rowData[approvalFieldsMap[statusField].by].split('(')[0].trim()}</span>
-    <span
-      className="cursor-pointer hover:text-blue-400 transition-colors"
-      onClick={(e) => {
-        e.stopPropagation();
-        const approvalDateField = approvalFieldsMap[statusField].date;
-        showCellHistory(e, field, rowData, approvalDateField);
-      }}
-      title="View approval date history"
-    >
-      {rowData[approvalFieldsMap[statusField].date] ? formatDate(rowData[approvalFieldsMap[statusField].date]) : '--'}
-    </span>
-  </span>
-)}
         </div>
-      )}
-    </div>
-  );
-}, [darkMode, formatDate, showCellHistory, getStatusBadgeStyles, approvalFieldsMap]);
+        {status === 'Approved' && approvedBy && (
+          <div className={`flex flex-col items-start gap-0.5 text-sm font-semibold ${darkMode ? 'text-green-300' : 'text-green-700'}`}>
+            <span>✓ {approvedBy.split('(')[0].trim()}</span>
+            <span
+              className="cursor-pointer hover:text-blue-500 transition-colors flex items-center gap-1"
+              onClick={(e) => {
+                e.stopPropagation();
+                showCellHistory(e, approvalInfo.date, rowData);
+              }}
+              title="View approval date history"
+            >
+              📅 {approvedDate ? formatDate(approvedDate) : '--'}
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  }, [getStatusBadgeStyles, showCellHistory, approvalFieldsMap, formatDate, darkMode]);
 
   const columnStyle = useCallback((field) => {
     if (redFields.includes(field)) return { backgroundColor: darkMode ? 'rgba(239, 68, 68, 0.12)' : '#fff1f1' };
@@ -461,19 +537,24 @@ const TrackerPage = () => {
     { field: 'styleNo', header: 'Style No.', frozen: true, style: { width: '180px' } },
     { field: 'factoryFOB', header: 'Factory FOB', isDate: true },
     { field: 'vendorPhotoShootDate', header: 'PhotoShoot Date', isDate: true },
-    { field: 'labdipQualityDeskloomDue', header: 'Labdip Due', isDate: true },
-    { field: 'labdipPlannedDate', header: 'Labdip Planned', isDate: true, statusField: 'labdipPlannedStatus' },
-    { field: 'photoSampleDue', header: 'Photo Sample Due', isDate: true },
-    { field: 'photoSamplePlannedDate', header: 'Photo Sample Planned', isDate: true, statusField: 'photoSamplePlannedStatus' },
-    { field: 'testReportDue', header: 'Test Report Due', isDate: true },
-    { field: 'plannedFPT', header: 'Planned FPT', isDate: true, statusField: 'plannedFPTStatus' },
-    { field: 'plannedGPT', header: 'Planned GPT', isDate: true, statusField: 'plannedGPTStatus' },
-    { field: 'gsmColorLotsDue', header: 'GSM/Color Due', isDate: true },
-    { field: 'gsmColorLotsPlanned', header: 'GSM/Color Planned', isDate: true, statusField: 'gsmColorLotsPlannedStatus' },
+    { field: 'labdipQualityDeskloomDue', header: 'DUO DATE (Labdip)', isDate: true },
+    { field: 'labdipPlannedDate', header: 'PLANNED DATE (Labdip)', isDate: true },
+    { field: 'labdipPlannedStatus', header: 'STATUS (Labdip)', isStatus: true },
+    { field: 'photoSampleDue', header: 'DUO DATE (Photo Sample)', isDate: true },
+    { field: 'photoSamplePlannedDate', header: 'PLANNED DATE (Photo Sample)', isDate: true },
+    { field: 'photoSamplePlannedStatus', header: 'STATUS (Photo Sample)', isStatus: true },
+    { field: 'testReportDue', header: 'DUO DATE (Test Report)', isDate: true },
+    { field: 'plannedFPT', header: 'PLANNED DATE (FPT)', isDate: true },
+    { field: 'plannedFPTStatus', header: 'STATUS (FPT)', isStatus: true },
+    { field: 'plannedGPT', header: 'PLANNED DATE (GPT)', isDate: true },
+    { field: 'plannedGPTStatus', header: 'STATUS (GPT)', isStatus: true },
+    { field: 'gsmColorLotsDue', header: 'DUO DATE (GSM/Color)', isDate: true },
+    { field: 'gsmColorLotsPlanned', header: 'PLANNED DATE (GSM/Color)', isDate: true },
+    { field: 'gsmColorLotsPlannedStatus', header: 'STATUS (GSM/Color)', isStatus: true },
     { field: 'remark', header: 'Remark' },
     ...customCols.map(col => ({ field: col, header: col.toUpperCase() })),
     { field: 'actions', header: 'Edit', frozen: true, style: { width: '80px' } }
-  ], [isAdmin, customCols, darkMode]);
+  ], [isAdmin, customCols]);
 
   const visibleColumns = useMemo(() => allColumnDefs.filter(col => !hiddenColumns.includes(col.field)), [allColumnDefs, hiddenColumns]);
 
@@ -497,8 +578,13 @@ const TrackerPage = () => {
           </button>
         </div>
       )}
+      {filter && (
+        <button onClick={clearFilter} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-amber-500/20 text-amber-600 border border-amber-300 hover:bg-amber-500/30 transition-all">
+          <FilterX size={16} /> Clear Filter: {filter.replace('-', ' ').toUpperCase()}
+        </button>
+      )}
     </div>
-  ), [isAdmin, isPMA, openNew, customCols, selectedRows, confirmDelete, darkMode]);
+  ), [isAdmin, isPMA, openNew, customCols, selectedRows, confirmDelete, darkMode, filter, clearFilter]);
 
   const toolbarRight = useMemo(() => (
     <div className="flex gap-3 items-center">
@@ -554,8 +640,8 @@ const TrackerPage = () => {
     </button>
   ), [darkMode, navigate]);
 
-  const totalEntries = data.length;
-  const pendingCount = data.filter(row => row.pendingStatus && !['Approved', 'Completed'].includes(row.pendingStatus)).length;
+  const totalEntries = filteredData.length;
+  const pendingCount = filteredData.filter(row => row.pendingStatus && !['Approved', 'Completed'].includes(row.pendingStatus)).length;
 
   const renderApprovalFields = (statusField, byField, dateField) => {
     if (formData[statusField] !== 'Approved') return null;
@@ -568,7 +654,7 @@ const TrackerPage = () => {
             onChange={(e) => setFormData({ ...formData, [byField]: e.target.value })}
             placeholder="Enter name"
             disabled={!isFieldEditable(byField)}
-            className={`w-full p-2 text-sm ${darkMode ? 'bg-white/5 border-white/10 text-white' : ''}`}
+            className={`w-full p-2 text-sm ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`}
           />
         </div>
         <div>
@@ -588,7 +674,6 @@ const TrackerPage = () => {
 
   return (
     <div className={`flex h-screen w-full transition-all duration-300 overflow-hidden ${darkMode ? 'bg-[#0f172a] text-white' : 'bg-[#f4f7fb] text-slate-900'}`}>
-
       <Toast ref={toast} />
       <ConfirmDialog visible={confirmState.visible} onHide={() => setConfirmState(prev => ({ ...prev, visible: false }))} message={confirmState.message}
         header="Confirmation" icon="pi pi-exclamation-triangle" accept={confirmState.accept} />
@@ -643,26 +728,41 @@ const TrackerPage = () => {
 
           <div className={`transition-all rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col border ${darkMode ? 'bg-[#1e293b] border-gray-800' : 'bg-white border-gray-100'}`} style={{ height: '100%', minHeight: 0 }}>
             <DataTable
-              value={data}
+              value={filteredData}
               selection={selectedRows}
               onSelectionChange={(e) => setSelectedRows(e.value)}
               paginator rows={15} rowsPerPageOptions={[15, 30, 50]}
               filterDisplay="row"
-              scrollable scrollHeight="flex"
+              scrollable
+              scrollHeight="flex"
               showGridlines
+              resizableColumns
+              columnResizeMode="expand"
               loading={loading}
               emptyMessage="No entries found. Click 'New Entry' to add."
               className={`p-datatable-sm p-datatable-gridlines whitespace-nowrap ${darkMode ? 'custom-dark-table' : ''}`}
               dataKey="_id"
-              tableStyle={{ minWidth: '120rem' }}
+              tableStyle={{ minWidth: '120rem', borderCollapse: 'collapse' }}
               style={{ height: '100%' }}
               rowClassName={rowClassName}
             >
               {visibleColumns.map(col => {
                 if (col.field === 'selection') return <Column key="sel" selectionMode="multiple" frozen alignFrozen="left" style={col.style} />;
                 if (col.field === 'actions') return <Column key="act" body={actionBodyTemplate} header="Edit" frozen alignFrozen="right" style={col.style} />;
+                if (col.isStatus) {
+                  return (
+                    <Column
+                      key={col.field}
+                      field={col.field}
+                      header={col.header}
+                      sortable
+                      filter
+                      body={createStatusBody(col.field)}
+                      style={{ ...col.style, width: '220px' }}
+                    />
+                  );
+                }
                 const isDate = col.isDate || false;
-                const statusField = col.statusField || null;
                 return (
                   <Column
                     key={col.field}
@@ -670,7 +770,7 @@ const TrackerPage = () => {
                     header={col.header}
                     sortable
                     filter
-                    body={createClickableBody(col.field, isDate, statusField)}
+                    body={createClickableBody(col.field, isDate)}
                     frozen={col.frozen}
                     alignFrozen={col.frozen ? 'left' : undefined}
                     style={{ ...col.style, ...columnStyle(col.field) }}
@@ -745,100 +845,117 @@ const TrackerPage = () => {
         </div>
       </OverlayPanel>
 
-      <Dialog visible={formDialog} style={{ width: '850px' }} header={isEditing ? 'Edit Record' : 'New Record'} modal footer={dialogFooter} onHide={hideDialog} className={darkMode ? 'dark-dialog' : ''}>
+      <Dialog visible={formDialog} style={{ width: '950px' }} header={isEditing ? 'Edit Record' : 'New Record'} modal footer={dialogFooter} onHide={hideDialog} className={darkMode ? 'dark-dialog' : ''}>
         <TabView className="mt-2">
           <TabPanel header="Basic Details">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-2">
               <div className="field">
                 <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>CAT NO</label>
-                <InputText value={formData.catNo || ''} onChange={(e) => setFormData({ ...formData, catNo: e.target.value })} disabled={!isFieldEditable('catNo')} className={`w-full p-2 text-sm ${darkMode ? 'bg-white/5 border-white/10 text-white' : ''}`} />
+                <InputText value={formData.catNo || ''} onChange={(e) => setFormData({ ...formData, catNo: e.target.value })} disabled={!isFieldEditable('catNo')} className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`} />
               </div>
               <div className="field">
                 <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Style No. *</label>
-                <InputText value={formData.styleNo || ''} onChange={(e) => setFormData({ ...formData, styleNo: e.target.value })} disabled={!isFieldEditable('styleNo')} className={`w-full p-2 text-sm ${darkMode ? 'bg-white/5 border-white/10 text-white' : ''}`} />
+                <InputText value={formData.styleNo || ''} onChange={(e) => setFormData({ ...formData, styleNo: e.target.value })} disabled={!isFieldEditable('styleNo')} className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`} />
               </div>
               <div className="field">
                 <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Factory FOB</label>
-                <Calendar value={formData.factoryFOB ? new Date(formData.factoryFOB) : null} onChange={(e) => setFormData({ ...formData, factoryFOB: dateToStr(e.value) })} disabled={!isFieldEditable('factoryFOB')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm" />
+                <Calendar value={formData.factoryFOB ? new Date(formData.factoryFOB) : null} onChange={(e) => setFormData({ ...formData, factoryFOB: dateToStr(e.value) })} disabled={!isFieldEditable('factoryFOB')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
               </div>
               <div className="field md:col-span-2">
                 <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Remark</label>
-                <InputText value={formData.remark || ''} onChange={(e) => setFormData({ ...formData, remark: e.target.value })} disabled={!isFieldEditable('remark')} className={`w-full p-2 text-sm ${darkMode ? 'bg-white/5 border-white/10 text-white' : ''}`} />
+                <InputTextarea
+                  value={formData.remark || ''}
+                  onChange={(e) => setFormData({ ...formData, remark: e.target.value })}
+                  rows={3}
+                  autoResize
+                  disabled={!isFieldEditable('remark')}
+                  className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.stopPropagation();
+                    }
+                  }}
+                />
               </div>
               {customCols.map(col => (
                 <div className="field" key={col}>
                   <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-indigo-300' : 'text-indigo-700'}`}>{col.toUpperCase()}</label>
-                  <InputText value={formData[col] || ''} onChange={(e) => setFormData({ ...formData, [col]: e.target.value })} disabled={!isFieldEditable(col)} className={`w-full p-2 text-sm ${darkMode ? 'bg-indigo-900/20 border-indigo-500/30 text-white' : 'bg-indigo-50 border-indigo-200'}`} />
+                  <InputText value={formData[col] || ''} onChange={(e) => setFormData({ ...formData, [col]: e.target.value })} disabled={!isFieldEditable(col)} className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-indigo-900/20 border-indigo-500/30 text-white' : 'bg-indigo-50 border-indigo-200'}`} />
                 </div>
               ))}
             </div>
           </TabPanel>
 
           <TabPanel header="Labdip & Photo">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-2">
               <div className="field md:col-span-2">
                 <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>PhotoShoot Date</label>
-                <Calendar value={formData.vendorPhotoShootDate ? new Date(formData.vendorPhotoShootDate) : null} onChange={(e) => setFormData({ ...formData, vendorPhotoShootDate: dateToStr(e.value) })} disabled={!isFieldEditable('vendorPhotoShootDate')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm" />
+                <Calendar value={formData.vendorPhotoShootDate ? new Date(formData.vendorPhotoShootDate) : null} onChange={(e) => setFormData({ ...formData, vendorPhotoShootDate: dateToStr(e.value) })} disabled={!isFieldEditable('vendorPhotoShootDate')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
               </div>
               <div className="field">
-                <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Labdip Due</label>
-                <Calendar value={formData.labdipQualityDeskloomDue ? new Date(formData.labdipQualityDeskloomDue) : null} onChange={(e) => setFormData({ ...formData, labdipQualityDeskloomDue: dateToStr(e.value) })} disabled={!isFieldEditable('labdipQualityDeskloomDue')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm" />
+                <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Labdip Due (DUO)</label>
+                <Calendar value={formData.labdipQualityDeskloomDue ? new Date(formData.labdipQualityDeskloomDue) : null} onChange={(e) => setFormData({ ...formData, labdipQualityDeskloomDue: dateToStr(e.value) })} disabled={!isFieldEditable('labdipQualityDeskloomDue')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
               </div>
               <div className="field">
-                <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Labdip Planned</label>
-                <div className="flex gap-2">
-                  <Calendar value={formData.labdipPlannedDate ? new Date(formData.labdipPlannedDate) : null} onChange={(e) => setFormData({ ...formData, labdipPlannedDate: dateToStr(e.value) })} disabled={!isFieldEditable('labdipPlannedDate')} dateFormat="dd/mm/yy" className="flex-1" inputClassName="p-2 text-sm" />
-                  <Dropdown value={formData.labdipPlannedStatus || 'Pending'} options={statusOptions} onChange={(e) => setFormData({ ...formData, labdipPlannedStatus: e.value })} disabled={!isFieldEditable('labdipPlannedStatus')} className="flex-1" placeholder="Select Status" />
-                </div>
+                <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Labdip Planned Date</label>
+                <Calendar value={formData.labdipPlannedDate ? new Date(formData.labdipPlannedDate) : null} onChange={(e) => setFormData({ ...formData, labdipPlannedDate: dateToStr(e.value) })} disabled={!isFieldEditable('labdipPlannedDate')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
+              </div>
+              <div className="field">
+                <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Labdip Status</label>
+                <Dropdown value={formData.labdipPlannedStatus || 'Pending'} options={statusOptions} onChange={(e) => setFormData({ ...formData, labdipPlannedStatus: e.value })} disabled={!isFieldEditable('labdipPlannedStatus')} className="w-full" placeholder="Select Status" />
                 {renderApprovalFields('labdipPlannedStatus', 'labdipApprovedBy', 'labdipApprovedDate')}
               </div>
               <div className="field">
-                <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Photo Sample Due</label>
-                <Calendar value={formData.photoSampleDue ? new Date(formData.photoSampleDue) : null} onChange={(e) => setFormData({ ...formData, photoSampleDue: dateToStr(e.value) })} disabled={!isFieldEditable('photoSampleDue')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm" />
+                <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Photo Sample Due (DUO)</label>
+                <Calendar value={formData.photoSampleDue ? new Date(formData.photoSampleDue) : null} onChange={(e) => setFormData({ ...formData, photoSampleDue: dateToStr(e.value) })} disabled={!isFieldEditable('photoSampleDue')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
               </div>
               <div className="field">
-                <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Photo Sample Planned</label>
-                <div className="flex gap-2">
-                  <Calendar value={formData.photoSamplePlannedDate ? new Date(formData.photoSamplePlannedDate) : null} onChange={(e) => setFormData({ ...formData, photoSamplePlannedDate: dateToStr(e.value) })} disabled={!isFieldEditable('photoSamplePlannedDate')} dateFormat="dd/mm/yy" className="flex-1" inputClassName="p-2 text-sm" />
-                  <Dropdown value={formData.photoSamplePlannedStatus || 'Pending'} options={statusOptions} onChange={(e) => setFormData({ ...formData, photoSamplePlannedStatus: e.value })} disabled={!isFieldEditable('photoSamplePlannedStatus')} className="flex-1" placeholder="Select Status" />
-                </div>
+                <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Photo Sample Planned Date</label>
+                <Calendar value={formData.photoSamplePlannedDate ? new Date(formData.photoSamplePlannedDate) : null} onChange={(e) => setFormData({ ...formData, photoSamplePlannedDate: dateToStr(e.value) })} disabled={!isFieldEditable('photoSamplePlannedDate')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
+              </div>
+              <div className="field">
+                <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Photo Sample Status</label>
+                <Dropdown value={formData.photoSamplePlannedStatus || 'Pending'} options={statusOptions} onChange={(e) => setFormData({ ...formData, photoSamplePlannedStatus: e.value })} disabled={!isFieldEditable('photoSamplePlannedStatus')} className="w-full" placeholder="Select Status" />
                 {renderApprovalFields('photoSamplePlannedStatus', 'photoSampleApprovedBy', 'photoSampleApprovedDate')}
               </div>
             </div>
           </TabPanel>
 
           <TabPanel header="Test, FPT, GPT & GSM">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-2">
               <div className="field md:col-span-2">
-                <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Test Report Due</label>
-                <Calendar value={formData.testReportDue ? new Date(formData.testReportDue) : null} onChange={(e) => setFormData({ ...formData, testReportDue: dateToStr(e.value) })} disabled={!isFieldEditable('testReportDue')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm" />
+                <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Test Report Due (DUO)</label>
+                <Calendar value={formData.testReportDue ? new Date(formData.testReportDue) : null} onChange={(e) => setFormData({ ...formData, testReportDue: dateToStr(e.value) })} disabled={!isFieldEditable('testReportDue')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
               </div>
               <div className="field">
-                <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Planned FPT</label>
-                <div className="flex gap-2">
-                  <Calendar value={formData.plannedFPT ? new Date(formData.plannedFPT) : null} onChange={(e) => setFormData({ ...formData, plannedFPT: dateToStr(e.value) })} disabled={!isFieldEditable('plannedFPT')} dateFormat="dd/mm/yy" className="flex-1" inputClassName="p-2 text-sm" />
-                  <Dropdown value={formData.plannedFPTStatus || 'Pending'} options={statusOptions} onChange={(e) => setFormData({ ...formData, plannedFPTStatus: e.value })} disabled={!isFieldEditable('plannedFPTStatus')} className="flex-1" placeholder="Select Status" />
-                </div>
+                <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Planned FPT Date</label>
+                <Calendar value={formData.plannedFPT ? new Date(formData.plannedFPT) : null} onChange={(e) => setFormData({ ...formData, plannedFPT: dateToStr(e.value) })} disabled={!isFieldEditable('plannedFPT')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
+              </div>
+              <div className="field">
+                <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>FPT Status</label>
+                <Dropdown value={formData.plannedFPTStatus || 'Pending'} options={statusOptions} onChange={(e) => setFormData({ ...formData, plannedFPTStatus: e.value })} disabled={!isFieldEditable('plannedFPTStatus')} className="w-full" placeholder="Select Status" />
                 {renderApprovalFields('plannedFPTStatus', 'plannedFPTApprovedBy', 'plannedFPTApprovedDate')}
               </div>
               <div className="field">
-                <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Planned GPT</label>
-                <div className="flex gap-2">
-                  <Calendar value={formData.plannedGPT ? new Date(formData.plannedGPT) : null} onChange={(e) => setFormData({ ...formData, plannedGPT: dateToStr(e.value) })} disabled={!isFieldEditable('plannedGPT')} dateFormat="dd/mm/yy" className="flex-1" inputClassName="p-2 text-sm" />
-                  <Dropdown value={formData.plannedGPTStatus || 'Pending'} options={statusOptions} onChange={(e) => setFormData({ ...formData, plannedGPTStatus: e.value })} disabled={!isFieldEditable('plannedGPTStatus')} className="flex-1" placeholder="Select Status" />
-                </div>
+                <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Planned GPT Date</label>
+                <Calendar value={formData.plannedGPT ? new Date(formData.plannedGPT) : null} onChange={(e) => setFormData({ ...formData, plannedGPT: dateToStr(e.value) })} disabled={!isFieldEditable('plannedGPT')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
+              </div>
+              <div className="field">
+                <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>GPT Status</label>
+                <Dropdown value={formData.plannedGPTStatus || 'Pending'} options={statusOptions} onChange={(e) => setFormData({ ...formData, plannedGPTStatus: e.value })} disabled={!isFieldEditable('plannedGPTStatus')} className="w-full" placeholder="Select Status" />
                 {renderApprovalFields('plannedGPTStatus', 'plannedGPTApprovedBy', 'plannedGPTApprovedDate')}
               </div>
               <div className="field">
-                <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>GSM/Color Due</label>
-                <Calendar value={formData.gsmColorLotsDue ? new Date(formData.gsmColorLotsDue) : null} onChange={(e) => setFormData({ ...formData, gsmColorLotsDue: dateToStr(e.value) })} disabled={!isFieldEditable('gsmColorLotsDue')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm" />
+                <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>GSM/Color Due (DUO)</label>
+                <Calendar value={formData.gsmColorLotsDue ? new Date(formData.gsmColorLotsDue) : null} onChange={(e) => setFormData({ ...formData, gsmColorLotsDue: dateToStr(e.value) })} disabled={!isFieldEditable('gsmColorLotsDue')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
               </div>
               <div className="field">
-                <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>GSM/Color Planned</label>
-                <div className="flex gap-2">
-                  <Calendar value={formData.gsmColorLotsPlanned ? new Date(formData.gsmColorLotsPlanned) : null} onChange={(e) => setFormData({ ...formData, gsmColorLotsPlanned: dateToStr(e.value) })} disabled={!isFieldEditable('gsmColorLotsPlanned')} dateFormat="dd/mm/yy" className="flex-1" inputClassName="p-2 text-sm" />
-                  <Dropdown value={formData.gsmColorLotsPlannedStatus || 'Pending'} options={statusOptions} onChange={(e) => setFormData({ ...formData, gsmColorLotsPlannedStatus: e.value })} disabled={!isFieldEditable('gsmColorLotsPlannedStatus')} className="flex-1" placeholder="Select Status" />
-                </div>
+                <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>GSM/Color Planned Date</label>
+                <Calendar value={formData.gsmColorLotsPlanned ? new Date(formData.gsmColorLotsPlanned) : null} onChange={(e) => setFormData({ ...formData, gsmColorLotsPlanned: dateToStr(e.value) })} disabled={!isFieldEditable('gsmColorLotsPlanned')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
+              </div>
+              <div className="field">
+                <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>GSM/Color Status</label>
+                <Dropdown value={formData.gsmColorLotsPlannedStatus || 'Pending'} options={statusOptions} onChange={(e) => setFormData({ ...formData, gsmColorLotsPlannedStatus: e.value })} disabled={!isFieldEditable('gsmColorLotsPlannedStatus')} className="w-full" placeholder="Select Status" />
                 {renderApprovalFields('gsmColorLotsPlannedStatus', 'gsmColorLotsApprovedBy', 'gsmColorLotsApprovedDate')}
               </div>
             </div>
