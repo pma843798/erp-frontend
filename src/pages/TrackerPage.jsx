@@ -18,6 +18,7 @@ import { Checkbox } from 'primereact/checkbox';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import AIChat from '../components/AIChat';
+  
 import {
   LayoutDashboard, LogOut, Plus, Trash2, Download, Printer,
   Sun, Moon, Columns, Edit3, Users, Database, Grid, FilterX
@@ -60,10 +61,9 @@ const TrackerPage = () => {
   const [cellHistory, setCellHistory] = useState([]);
   const [cellField, setCellField] = useState('');
   const [currentEntryId, setCurrentEntryId] = useState(null);
-  const [selectedHistoryItems, setSelectedHistoryItems] = useState([]); // NEW
+  const [selectedHistoryItems, setSelectedHistoryItems] = useState([]);
 
   const [customCols, setCustomCols] = useState([]);
-  // Add column state removed
 
   const [renameDialog, setRenameDialog] = useState(false);
   const [colToRename, setColToRename] = useState('');
@@ -126,7 +126,6 @@ const TrackerPage = () => {
     return api.put('/tracker/column/rename', { oldName, newName });
   }, []);
 
-  // UPDATED: clearHistory now accepts optional historyIds array
   const clearHistory = useCallback(async (entryId, field, historyIds = null) => {
     const payload = historyIds ? { field, historyIds } : { field };
     return api.delete(`/tracker/history/${entryId}`, { data: payload });
@@ -299,8 +298,6 @@ const TrackerPage = () => {
     });
   }, [selectedRows, handleDeleteSelected]);
 
-  // handleAddColumn removed
-
   const handleRenameColumn = useCallback(async () => {
     if (!colToRename || !renamedColName.trim()) return;
     const newName = renamedColName.trim();
@@ -335,7 +332,6 @@ const TrackerPage = () => {
     exportCSV(rows, customCols, toast);
   }, [filteredData, selectedRows, exportSelectedOnly, customCols]);
 
-  // NEW: Delete selected history items
   const handleDeleteSelectedHistory = useCallback(async () => {
     if (selectedHistoryItems.length === 0) return;
     setConfirmState({
@@ -345,7 +341,6 @@ const TrackerPage = () => {
         try {
           await clearHistory(currentEntryId, cellField, selectedHistoryItems);
           toast.current.show({ severity: 'success', summary: 'Deleted', detail: 'Selected history entries removed', life: 2000 });
-          // Refresh the history list for the same field
           const updatedEntry = await api.get(`/tracker/${currentEntryId}`);
           const rowData = updatedEntry.data;
           const raw = rowData.history || [];
@@ -358,7 +353,7 @@ const TrackerPage = () => {
           });
           setCellHistory(filtered);
           setSelectedHistoryItems([]);
-          loadData(); // reload main table to update orange pulse indicators
+          loadData();
         } catch (err) {
           toast.current.show({ severity: 'error', summary: 'Error', detail: 'Failed to delete history', life: 3000 });
         }
@@ -367,11 +362,10 @@ const TrackerPage = () => {
     });
   }, [currentEntryId, cellField, selectedHistoryItems, clearHistory, loadData, formatDate]);
 
-  // UPDATED: Reset selectedHistoryItems when opening popup
   const showCellHistory = useCallback((e, field, rowData) => {
     setCurrentEntryId(rowData._id);
     setCellField(field);
-    setSelectedHistoryItems([]); // clear previous selections
+    setSelectedHistoryItems([]);
     const raw = rowData.history || [];
     const filtered = raw.filter((h) => {
       if (h.field !== field || ['createdAt', 'updatedAt', '__v', 'history'].includes(h.field)) return false;
@@ -384,7 +378,6 @@ const TrackerPage = () => {
     op.current.toggle(e);
   }, [formatDate]);
 
-  // Keep original clear all history (now uses same clearHistory without historyIds)
   const handleClearAllHistory = useCallback(async () => {
     setConfirmState({
       visible: true,
@@ -517,25 +510,26 @@ const TrackerPage = () => {
     <Button icon="pi pi-pencil" className={`p-button-rounded p-button-text ${darkMode ? '!text-cyan-400 hover:!bg-cyan-400/10' : '!text-blue-600 hover:!bg-blue-50'}`} onClick={() => openEdit(rowData)} />
   ), [darkMode, openEdit]);
 
+  // YAHAN MAINE TEXT-WRAP ENABLE KIYA HAI AUR 'DUO' KI JAGAH 'Due Date' KIYA HAI
   const allColumnDefs = useMemo(() => [
     ...(isAdmin ? [{ field: 'selection', header: '', body: null, frozen: true, style: { width: '50px' } }] : []),
     { field: 'catNo', header: 'CAT NO', frozen: true, style: { width: '160px' } },
     { field: 'styleNo', header: 'Style No.', frozen: true, style: { width: '180px' } },
-    { field: 'factoryFOB', header: 'Factory FOB', isDate: true },
-    { field: 'vendorPhotoShootDate', header: 'PhotoShoot Date', isDate: true },
-    { field: 'labdipQualityDeskloomDue', header: 'DUO DATE (Labdip)', isDate: true },
-    { field: 'labdipPlannedDate', header: 'PLANNED DATE (Labdip)', isDate: true },
+    { field: 'factoryFOB', header: 'Factory FOB', isDate: true, style: { width: '110px' } },
+    { field: 'vendorPhotoShootDate', header: 'PhotoShoot Date', isDate: true, style: { width: '110px' } },
+    { field: 'labdipQualityDeskloomDue', header: 'Due Date (Labdip)', isDate: true, style: { width: '110px' } },
+    { field: 'labdipPlannedDate', header: 'PLANNED DATE (Labdip)', isDate: true, style: { minWidth: '160px' } },
     { field: 'labdipPlannedStatus', header: 'STATUS (Labdip)', isStatus: true },
-    { field: 'photoSampleDue', header: 'DUO DATE (Photo Sample)', isDate: true },
-    { field: 'photoSamplePlannedDate', header: 'PLANNED DATE (Photo Sample)', isDate: true },
+    { field: 'photoSampleDue', header: 'Due Date (Photo Sample)', isDate: true, style: { width: '110px' } },
+    { field: 'photoSamplePlannedDate', header: 'PLANNED DATE (Photo Sample)', isDate: true, style: { minWidth: '160px' } },
     { field: 'photoSamplePlannedStatus', header: 'STATUS (Photo Sample)', isStatus: true },
-    { field: 'testReportDue', header: 'DUO DATE (Test Report)', isDate: true },
-    { field: 'plannedFPT', header: 'PLANNED DATE (FPT)', isDate: true },
+    { field: 'testReportDue', header: 'Due Date (Test Report)', isDate: true, style: { width: '110px' } },
+    { field: 'plannedFPT', header: 'PLANNED DATE (FPT)', isDate: true, style: { minWidth: '160px' } },
     { field: 'plannedFPTStatus', header: 'STATUS (FPT)', isStatus: true },
-    { field: 'plannedGPT', header: 'PLANNED DATE (GPT)', isDate: true },
+    { field: 'plannedGPT', header: 'PLANNED DATE (GPT)', isDate: true, style: { minWidth: '160px' } },
     { field: 'plannedGPTStatus', header: 'STATUS (GPT)', isStatus: true },
-    { field: 'gsmColorLotsDue', header: 'DUO DATE (GSM/Color)', isDate: true },
-    { field: 'gsmColorLotsPlanned', header: 'PLANNED DATE (GSM/Color)', isDate: true },
+    { field: 'gsmColorLotsDue', header: 'Due Date (GSM/Color)', isDate: true, style: { width: '110px' } },
+    { field: 'gsmColorLotsPlanned', header: 'PLANNED DATE (GSM/Color)', isDate: true, style: { minWidth: '160px' } },
     { field: 'gsmColorLotsPlannedStatus', header: 'STATUS (GSM/Color)', isStatus: true },
     { field: 'remark', header: 'Remark' },
     ...customCols.map(col => ({ field: col, header: col.toUpperCase() })),
@@ -553,7 +547,6 @@ const TrackerPage = () => {
       )}
       {isAdmin && (
         <div className="flex gap-2">
-          {/* Add Column button removed */}
           <button onClick={() => setRenameDialog(true)} disabled={customCols.length === 0} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border disabled:opacity-50 ${darkMode ? 'text-indigo-300 border-indigo-500/30 hover:bg-indigo-500/10' : 'text-slate-700 bg-white border-gray-200 hover:bg-gray-50'}`}>
             <Edit3 size={16} /> Rename Column
           </button>
@@ -670,7 +663,6 @@ const TrackerPage = () => {
       <ConfirmDialog visible={confirmState.visible} onHide={() => setConfirmState(prev => ({ ...prev, visible: false }))} message={confirmState.message}
         header="Confirmation" icon="pi pi-exclamation-triangle" accept={confirmState.accept} />
 
-      {/* Sidebar - fixed overlay, only when data exists */}
       {hasData && (
         <>
           {sidebarOpen && (
@@ -774,6 +766,7 @@ const TrackerPage = () => {
                       filter
                       body={createStatusBody(col.field)}
                       style={{ ...col.style, width: '220px' }}
+                      headerStyle={{ whiteSpace: 'normal', wordWrap: 'break-word', lineHeight: '1.2' }}
                     />
                   );
                 }
@@ -789,6 +782,7 @@ const TrackerPage = () => {
                     frozen={col.frozen}
                     alignFrozen={col.frozen ? 'left' : undefined}
                     style={{ ...col.style, ...columnStyle(col.field) }}
+                    headerStyle={{ whiteSpace: 'normal', wordWrap: 'break-word', lineHeight: '1.2' }}
                   />
                 );
               })}
@@ -797,7 +791,6 @@ const TrackerPage = () => {
         </div>
       </main>
 
-      {/* Rename Column Dialog - kept */}
       <Dialog visible={renameDialog} style={{ width: '400px' }} header="Rename Column" modal onHide={() => setRenameDialog(false)} className={darkMode ? 'dark-dialog' : ''}>
         <div className="mt-4 space-y-4">
           <div>
@@ -812,7 +805,6 @@ const TrackerPage = () => {
         </div>
       </Dialog>
 
-      {/* UPDATED OverlayPanel with checkbox selection and two delete buttons */}
       <OverlayPanel ref={op} className={`shadow-2xl rounded-2xl ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`} style={{ maxWidth: '550px' }}>
         <div className="p-4">
           <div className="flex justify-between items-center mb-3 gap-4 flex-wrap">
@@ -924,7 +916,7 @@ const TrackerPage = () => {
                 <Calendar value={formData.vendorPhotoShootDate ? new Date(formData.vendorPhotoShootDate) : null} onChange={(e) => setFormData({ ...formData, vendorPhotoShootDate: dateToStr(e.value) })} disabled={!isFieldEditable('vendorPhotoShootDate')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
               </div>
               <div className="field">
-                <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Labdip Due (DUO)</label>
+                <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Labdip Due Date</label>
                 <Calendar value={formData.labdipQualityDeskloomDue ? new Date(formData.labdipQualityDeskloomDue) : null} onChange={(e) => setFormData({ ...formData, labdipQualityDeskloomDue: dateToStr(e.value) })} disabled={!isFieldEditable('labdipQualityDeskloomDue')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
               </div>
               <div className="field">
@@ -937,7 +929,7 @@ const TrackerPage = () => {
                 {renderApprovalFields('labdipPlannedStatus', 'labdipApprovedBy', 'labdipApprovedDate')}
               </div>
               <div className="field">
-                <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Photo Sample Due (DUO)</label>
+                <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Photo Sample Due Date</label>
                 <Calendar value={formData.photoSampleDue ? new Date(formData.photoSampleDue) : null} onChange={(e) => setFormData({ ...formData, photoSampleDue: dateToStr(e.value) })} disabled={!isFieldEditable('photoSampleDue')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
               </div>
               <div className="field">
@@ -954,7 +946,7 @@ const TrackerPage = () => {
           <TabPanel header="Test, FPT, GPT & GSM">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-2">
               <div className="field md:col-span-2">
-                <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Test Report Due (DUO)</label>
+                <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Test Report Due Date</label>
                 <Calendar value={formData.testReportDue ? new Date(formData.testReportDue) : null} onChange={(e) => setFormData({ ...formData, testReportDue: dateToStr(e.value) })} disabled={!isFieldEditable('testReportDue')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
               </div>
               <div className="field">
@@ -976,7 +968,7 @@ const TrackerPage = () => {
                 {renderApprovalFields('plannedGPTStatus', 'plannedGPTApprovedBy', 'plannedGPTApprovedDate')}
               </div>
               <div className="field">
-                <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>GSM/Color Due (DUO)</label>
+                <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>GSM/Color Due Date</label>
                 <Calendar value={formData.gsmColorLotsDue ? new Date(formData.gsmColorLotsDue) : null} onChange={(e) => setFormData({ ...formData, gsmColorLotsDue: dateToStr(e.value) })} disabled={!isFieldEditable('gsmColorLotsDue')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
               </div>
               <div className="field">
@@ -990,7 +982,7 @@ const TrackerPage = () => {
               </div>
             </div>
           </TabPanel>
-        </TabView>
+        </TabView>  
       </Dialog>
 
       <AIChat />

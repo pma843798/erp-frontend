@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { DataTable } from 'primereact/datatable';
-import { Column } from 'primereact/column';
 import AIChat from '../components/AIChat';
 import {
   LayoutDashboard,
@@ -16,7 +14,11 @@ import {
   Grid,
   Database,
   CheckCircle2,
-  ArrowRight
+  PieChart,
+  CalendarDays,
+  Camera,
+  Palette,
+  AlertCircle
 } from 'lucide-react';
 
 import api from '../services/api';
@@ -27,7 +29,6 @@ const Dashboard = () => {
   const navigate = useNavigate();
 
   const [stats, setStats] = useState(null);
-  const [recentEntries, setRecentEntries] = useState([]);
   const [completionRate, setCompletionRate] = useState({ percent: 0, filled: 0, total: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -57,7 +58,6 @@ const Dashboard = () => {
         
         const allEntries = entriesResponse.data || [];
         setStats(statsResponse.data);
-        setRecentEntries(allEntries.slice(0, 5));
 
         let filledDates = 0;
         let totalDateFields = allEntries.length * 2;
@@ -71,6 +71,7 @@ const Dashboard = () => {
         setCompletionRate({ percent, filled: filledDates, total: totalDateFields });
 
       } catch (err) {
+        console.error(err);
         setError("Failed to load dashboard data. Please check your connection.");
       } finally {
         setLoading(false);
@@ -84,16 +85,6 @@ const Dashboard = () => {
     navigate('/login');
   };
 
-  const formatDate = (dateStr) => {
-    if (!dateStr) return '-';
-    const date = new Date(dateStr);
-    if (isNaN(date.getTime())) return dateStr;
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${d}/${m}/${y}`;
-  };
-
   const getTodayDate = () => {
     const date = new Date();
     const y = date.getFullYear();
@@ -105,12 +96,6 @@ const Dashboard = () => {
   const handleCardClick = (filterType) => {
     navigate(`/tracker?filter=${filterType}`);
   };
-
-  const actionBodyTemplate = () => (
-    <button onClick={() => navigate('/tracker')} className={`p-2 rounded-lg transition-colors ${darkMode ? 'bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`} title="Go to entry">
-      <ArrowRight size={16} />
-    </button>
-  );
 
   const NavItem = ({ icon: Icon, label, path, active }) => (
     <button 
@@ -146,54 +131,44 @@ const Dashboard = () => {
     );
   }
 
+  // Define card color schemes based on card type
+  const getCardStyles = (cardId, colorHint) => {
+    const baseDark = darkMode;
+    const colorMap = {
+      orange: { bg: 'from-orange-500/20 to-orange-800/30', border: 'border-orange-500/30', text: 'text-orange-300' },
+      blue: { bg: 'from-blue-500/20 to-blue-800/30', border: 'border-blue-500/30', text: 'text-blue-300' },
+      pink: { bg: 'from-pink-500/20 to-pink-800/30', border: 'border-pink-500/30', text: 'text-pink-300' },
+      purple: { bg: 'from-purple-500/20 to-purple-800/30', border: 'border-purple-500/30', text: 'text-purple-300' },
+      emerald: { bg: 'from-emerald-500/20 to-emerald-800/30', border: 'border-emerald-500/30', text: 'text-emerald-300' },
+      green: { bg: 'from-green-500/20 to-green-800/30', border: 'border-green-500/30', text: 'text-green-300' },
+      red: { bg: 'from-red-500/20 to-red-800/30', border: 'border-red-500/30', text: 'text-red-300' },
+    };
+    const lightMap = {
+      orange: { bg: 'from-orange-50 to-orange-100', border: 'border-orange-200', text: 'text-orange-700' },
+      blue: { bg: 'from-blue-50 to-blue-100', border: 'border-blue-200', text: 'text-blue-700' },
+      pink: { bg: 'from-pink-50 to-pink-100', border: 'border-pink-200', text: 'text-pink-700' },
+      purple: { bg: 'from-purple-50 to-purple-100', border: 'border-purple-200', text: 'text-purple-700' },
+      emerald: { bg: 'from-emerald-50 to-emerald-100', border: 'border-emerald-200', text: 'text-emerald-700' },
+      green: { bg: 'from-green-50 to-green-100', border: 'border-green-200', text: 'text-green-700' },
+      red: { bg: 'from-red-50 to-red-100', border: 'border-red-200', text: 'text-red-700' },
+    };
+    const style = baseDark ? colorMap[colorHint] : lightMap[colorHint];
+    return style || (baseDark ? colorMap.blue : lightMap.blue);
+  };
+
   const cards = [
-    {
-      id: 'all',
-      title: 'Total Styles',
-      value: stats.totalStyles,
-      icon: <Package size={20} />,
-      colors: darkMode ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'bg-blue-50 text-blue-600 border-blue-100'
-    },
-    {
-      id: 'pending-gpt',
-      title: 'Pending GPT',
-      value: stats.pendingGPT,
-      icon: <Clock3 size={20} />,
-      colors: darkMode ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' : 'bg-orange-50 text-orange-600 border-orange-100'
-    },
-    {
-      id: 'pending-fpt',
-      title: 'Pending FPT',
-      value: stats.pendingFPT,
-      icon: <TrendingUp size={20} />,
-      colors: darkMode ? 'bg-pink-500/20 text-pink-400 border-pink-500/30' : 'bg-pink-50 text-pink-600 border-pink-100'
-    },
-    {
-      id: 'approved',
-      title: 'Approved',
-      value: stats.approvedCount,
-      icon: <CheckCircle2 size={20} />,
-      colors: darkMode ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-green-50 text-green-600 border-green-100'
-    },
-    {
-      id: 'delayed',
-      title: 'Delayed',
-      value: stats.delayedEntries,
-      icon: <AlertTriangle size={20} />,
-      colors: darkMode ? 'bg-red-500/20 text-red-400 border-red-500/30' : 'bg-red-50 text-red-600 border-red-100'
-    },
-    {
-      id: 'health',
-      title: 'Plan Dates Filled',
-      value: `${completionRate.percent}%`,
-      subtitle: `${completionRate.filled}/${completionRate.total} Fields`,
-      icon: <CheckCircle2 size={20} />,
-      colors: darkMode ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-emerald-50 text-emerald-600 border-emerald-100'
-    },
+    { id: 'pending-labdip', title: 'Labdip Pending', value: stats?.pendingLabdip || 0, icon: <Clock3 size={22} />, color: 'orange' },
+    { id: 'pending-photo', title: 'Photo Sample Pending', value: stats?.pendingPhotoSample || 0, icon: <Camera size={22} />, color: 'blue' },
+    { id: 'pending-fpt', title: 'FPT Pending', value: stats?.pendingFPT || 0, icon: <TrendingUp size={22} />, color: 'pink' },
+    { id: 'pending-gpt', title: 'GPT Pending', value: stats?.pendingGPT || 0, icon: <TrendingUp size={22} />, color: 'purple' },
+    { id: 'pending-gsm', title: 'GSM/Color Pending', value: stats?.pendingGSM || 0, icon: <Palette size={22} />, color: 'emerald' },
+    { id: 'approved', title: 'Total Approved', value: stats?.totalApproved || 0, icon: <CheckCircle2 size={22} />, color: 'green' },
+    { id: 'delayed', title: 'Delayed', value: stats?.delayedEntries || 0, icon: <AlertTriangle size={22} />, color: 'red' },
+    { id: 'urgent', title: 'Urgent Priority', value: stats?.urgentCount || 0, icon: <AlertCircle size={22} />, color: 'red' },
   ];
 
   return (
-    <div className={`flex h-screen w-full transition-all duration-300 overflow-hidden relative ${darkMode ? 'bg-[#0f172a] text-white' : 'bg-[#f4f7fb] text-slate-900'}`}>
+    <div className={`flex h-screen w-full overflow-hidden ${darkMode ? 'bg-[#0f172a] text-white' : 'bg-[#f4f7fb] text-slate-900'}`}>
       
       {/* SIDEBAR */}
       <aside className={`w-[260px] h-full flex flex-col justify-between border-r shrink-0 transition-all ${darkMode ? 'bg-[#1e293b] border-gray-800' : 'bg-white border-gray-200 shadow-sm'}`}>
@@ -236,80 +211,88 @@ const Dashboard = () => {
       </aside>
 
       {/* MAIN CONTENT */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden relative w-full">
-        <header className="px-8 py-8 flex justify-between items-start shrink-0">
+      <main className="flex-1 flex flex-col h-full overflow-hidden">
+        <header className={`px-4 md:px-8 py-4 md:py-6 flex justify-between items-start shrink-0 border-b ${darkMode ? 'border-gray-800' : 'border-gray-200'}`}>
           <div>
-            <h2 className="text-3xl font-extrabold flex items-center gap-2 capitalize">
+            <h2 className="text-2xl font-extrabold flex items-center gap-2 capitalize">
               {greeting}, {user?.name?.split(' ')[0] || 'Admin'}!
             </h2>
-            <p className={`mt-2 font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-              Monitor your production entries, vendors, and tracking updates.
+            <p className={`mt-1 text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+              Welcome back. Here's your production overview.
             </p>
           </div>
           
           <div className="flex items-center gap-4">
-            <button onClick={() => setDarkMode(!darkMode)} className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all shadow-sm ${darkMode ? 'bg-[#0080ff] text-white' : 'bg-[#00a2ff] text-white hover:bg-blue-500'}`}>
-              {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+            <button 
+              onClick={() => setDarkMode(!darkMode)} 
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-sm ${darkMode ? 'bg-[#0080ff] text-white' : 'bg-[#00a2ff] text-white hover:bg-blue-500'}`}
+            >
+              {darkMode ? <Sun size={18} /> : <Moon size={18} />}
             </button>
             
-            <div className={`px-5 py-2.5 rounded-2xl flex flex-col shadow-sm border ${darkMode ? 'bg-[#1e293b] border-gray-700' : 'bg-white border-gray-100'}`}>
-              <span className={`text-[10px] font-bold uppercase ${darkMode ? 'text-gray-400' : 'text-gray-400'}`}>Today's Date</span>
-              <span className="font-extrabold text-sm">{getTodayDate()}</span>
+            <div className={`px-4 py-2 rounded-xl flex flex-col shadow-sm border ${darkMode ? 'bg-[#1e293b] border-gray-700' : 'bg-white border-gray-100'}`}>
+              <span className={`text-[9px] font-bold uppercase ${darkMode ? 'text-gray-400' : 'text-gray-400'}`}>Today's Date</span>
+              <span className="font-extrabold text-xs">{getTodayDate()}</span>
             </div>
           </div>
         </header>
 
-        <div className="flex-1 px-8 pb-8 overflow-y-auto flex flex-col">
-          
-          {/* Changed Grid to exactly 3 columns (since there are 6 cards now) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-5 mb-6">
-            {cards.map((card, idx) => (
-              <div 
-                key={idx} 
-                onClick={() => handleCardClick(card.id)}
-                className={`rounded-2xl p-5 border shadow-sm cursor-pointer hover:-translate-y-1 hover:shadow-md transition-all duration-200 ${darkMode ? 'bg-[#1e293b] hover:bg-[#27354b] border-gray-800' : 'bg-white hover:bg-gray-50 border-gray-100'}`}
-              >
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className={`text-sm font-semibold ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{card.title}</p>
-                    <h2 className="text-3xl font-extrabold mt-1">{card.value}</h2>
-                    {card.subtitle && <p className={`text-[11px] font-bold mt-1 uppercase tracking-wide ${darkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>{card.subtitle}</p>}
+        {/* Scrollable cards section */}
+        <div className="flex-1 px-4 md:px-8 py-6 overflow-y-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
+            {cards.map((card, idx) => {
+              const styles = getCardStyles(card.id, card.color);
+              return (
+                <div 
+                  key={idx} 
+                  onClick={() => handleCardClick(card.id)}
+                  className={`relative group cursor-pointer rounded-2xl p-6 bg-gradient-to-br ${styles.bg} border backdrop-blur-sm transition-all duration-300 hover:scale-[1.02] hover:shadow-xl ${styles.border}`}
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className={`text-sm font-semibold tracking-wide ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{card.title}</p>
+                      <h2 className="text-4xl font-black mt-2 tracking-tight">{card.value}</h2>
+                    </div>
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center bg-white/20 backdrop-blur-sm border ${styles.border} ${styles.text}`}>
+                      {card.icon}
+                    </div>
                   </div>
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${card.colors}`}>
-                    {card.icon}
+                  <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="w-6 h-6 rounded-full bg-white/30 flex items-center justify-center text-xs">→</div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
-          <div className={`transition-all rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col border ${darkMode ? 'bg-[#1e293b] border-gray-800' : 'bg-white border-gray-100'}`}>
-            <div className={`flex justify-between items-center p-5 border-b ${darkMode ? 'border-gray-800' : 'border-gray-100'}`}>
-              <div>
-                <h2 className="text-lg font-bold">Recent Entries</h2>
-                <p className={`text-xs mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Latest production updates</p>
+          {/* Quick insights section - optional */}
+          <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className={`rounded-2xl p-5 border ${darkMode ? 'bg-[#1e293b]/70 border-gray-800' : 'bg-white border-gray-100 shadow-sm'}`}>
+              <div className="flex items-center gap-3 mb-3">
+                <CalendarDays size={20} className={darkMode ? 'text-cyan-400' : 'text-blue-500'} />
+                <h3 className="font-bold text-sm">Quick Insight</h3>
               </div>
-              <button onClick={() => navigate('/tracker')} className="bg-[#0080ff] hover:bg-blue-600 px-5 py-2 rounded-xl font-semibold shadow-sm transition-all text-white text-sm">
-                View All Entries
-              </button>
+              <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                Total styles: <span className="font-bold">{stats?.totalStyles || 0}</span><br />
+                Total Approved (any activity): <span className="font-bold text-green-500">{stats?.totalApproved || 0}</span><br />
+                Delayed entries: <span className="font-bold text-red-500">{stats?.delayedEntries || 0}</span>
+              </p>
             </div>
-
-            <div className="flex-1">
-              <DataTable value={recentEntries} responsiveLayout="scroll" className={`p-datatable-lg border-none ${darkMode ? 'custom-dark-table' : ''}`} emptyMessage="No recent entries found.">
-                <Column field="styleNo" header="Style No." className="font-semibold" />
-                <Column field="factoryFOB" header="FOB Date" body={(rowData) => formatDate(rowData.factoryFOB)} />
-                <Column field="plannedFPT" header="FPT Planned" body={(rowData) => formatDate(rowData.plannedFPT)} />
-                <Column field="plannedGPT" header="GPT Planned" body={(rowData) => formatDate(rowData.plannedGPT)} />
-                <Column header="Actions" body={actionBodyTemplate} style={{ width: '80px', textAlign: 'center' }} />
-              </DataTable>
+            <div className={`rounded-2xl p-5 border ${darkMode ? 'bg-[#1e293b]/70 border-gray-800' : 'bg-white border-gray-100 shadow-sm'}`}>
+              <div className="flex items-center gap-3 mb-3">
+                <PieChart size={20} className={darkMode ? 'text-emerald-400' : 'text-emerald-600'} />
+                <h3 className="font-bold text-sm">Plan Date Fill Rate</h3>
+              </div>
+              <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                FPT+GPT dates filled: <span className="font-bold">{completionRate.percent}%</span><br />
+                ({completionRate.filled}/{completionRate.total} fields)
+              </p>
             </div>
           </div>
-          
         </div>
       </main>
 
       <AIChat />
-
     </div>
   );
 };
