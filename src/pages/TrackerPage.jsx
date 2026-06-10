@@ -60,6 +60,7 @@ const TrackerPage = () => {
   const [cellHistory, setCellHistory] = useState([]);
   const [cellField, setCellField] = useState('');
   const [currentEntryId, setCurrentEntryId] = useState(null);
+  const [selectedHistoryItems, setSelectedHistoryItems] = useState([]); // NEW
 
   const [customCols, setCustomCols] = useState([]);
   // Add column state removed
@@ -125,8 +126,10 @@ const TrackerPage = () => {
     return api.put('/tracker/column/rename', { oldName, newName });
   }, []);
 
-  const clearHistory = useCallback(async (entryId, field) => {
-    return api.delete(`/tracker/history/${entryId}`, { data: { field } });
+  // UPDATED: clearHistory now accepts optional historyIds array
+  const clearHistory = useCallback(async (entryId, field, historyIds = null) => {
+    const payload = historyIds ? { field, historyIds } : { field };
+    return api.delete(`/tracker/history/${entryId}`, { data: payload });
   }, []);
 
   useEffect(() => {
@@ -332,9 +335,43 @@ const TrackerPage = () => {
     exportCSV(rows, customCols, toast);
   }, [filteredData, selectedRows, exportSelectedOnly, customCols]);
 
+  // NEW: Delete selected history items
+  const handleDeleteSelectedHistory = useCallback(async () => {
+    if (selectedHistoryItems.length === 0) return;
+    setConfirmState({
+      visible: true,
+      message: `Delete ${selectedHistoryItems.length} selected history entries?`,
+      accept: async () => {
+        try {
+          await clearHistory(currentEntryId, cellField, selectedHistoryItems);
+          toast.current.show({ severity: 'success', summary: 'Deleted', detail: 'Selected history entries removed', life: 2000 });
+          // Refresh the history list for the same field
+          const updatedEntry = await api.get(`/tracker/${currentEntryId}`);
+          const rowData = updatedEntry.data;
+          const raw = rowData.history || [];
+          const filtered = raw.filter((h) => {
+            if (h.field !== cellField || ['createdAt', 'updatedAt', '__v', 'history'].includes(h.field)) return false;
+            const isDate = cellField === 'factoryFOB' || cellField.toLowerCase().includes('date') || cellField.toLowerCase().includes('due') || cellField.includes('FPT') || cellField.includes('GPT');
+            const fOld = isDate ? formatDate(h.oldValue) : String(h.oldValue ?? '');
+            const fNew = isDate ? formatDate(h.newValue) : String(h.newValue ?? '');
+            return fOld !== fNew;
+          });
+          setCellHistory(filtered);
+          setSelectedHistoryItems([]);
+          loadData(); // reload main table to update orange pulse indicators
+        } catch (err) {
+          toast.current.show({ severity: 'error', summary: 'Error', detail: 'Failed to delete history', life: 3000 });
+        }
+        setConfirmState(prev => ({ ...prev, visible: false }));
+      }
+    });
+  }, [currentEntryId, cellField, selectedHistoryItems, clearHistory, loadData, formatDate]);
+
+  // UPDATED: Reset selectedHistoryItems when opening popup
   const showCellHistory = useCallback((e, field, rowData) => {
     setCurrentEntryId(rowData._id);
     setCellField(field);
+    setSelectedHistoryItems([]); // clear previous selections
     const raw = rowData.history || [];
     const filtered = raw.filter((h) => {
       if (h.field !== field || ['createdAt', 'updatedAt', '__v', 'history'].includes(h.field)) return false;
@@ -347,14 +384,15 @@ const TrackerPage = () => {
     op.current.toggle(e);
   }, [formatDate]);
 
-  const handleClearHistory = useCallback(async () => {
+  // Keep original clear all history (now uses same clearHistory without historyIds)
+  const handleClearAllHistory = useCallback(async () => {
     setConfirmState({
       visible: true,
-      message: 'Permanently delete this history log?',
+      message: 'Permanently delete ALL history logs for this field?',
       accept: async () => {
         try {
           await clearHistory(currentEntryId, cellField);
-          toast.current.show({ severity: 'success', summary: 'Cleared', detail: 'History deleted', life: 2000 });
+          toast.current.show({ severity: 'success', summary: 'Cleared', detail: 'All history deleted', life: 2000 });
           op.current.hide();
           loadData();
         } catch (err) {
@@ -774,13 +812,25 @@ const TrackerPage = () => {
         </div>
       </Dialog>
 
+      {/* UPDATED OverlayPanel with checkbox selection and two delete buttons */}
       <OverlayPanel ref={op} className={`shadow-2xl rounded-2xl ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`} style={{ maxWidth: '550px' }}>
         <div className="p-4">
-          <div className="flex justify-between items-center mb-3 gap-8">
+          <div className="flex justify-between items-center mb-3 gap-4 flex-wrap">
             <h4 className={`text-lg font-bold ${darkMode ? 'text-cyan-400' : 'text-blue-600'}`}>📜 History Log</h4>
-            {isAdmin && cellHistory.length > 0 && (
-              <button onClick={handleClearHistory} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all">Clear History</button>
-            )}
+            <div className="flex gap-2">
+              {isAdmin && cellHistory.length > 0 && (
+                <>
+                  {selectedHistoryItems.length > 0 && (
+                    <button onClick={handleDeleteSelectedHistory} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:bg-red-600">
+                      Delete Selected ({selectedHistoryItems.length})
+                    </button>
+                  )}
+                  <button onClick={handleClearAllHistory} className="bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all">
+                    Clear All
+                  </button>
+                </>
+              )}
+            </div>
           </div>
           {cellHistory.length === 0 ? (
             <p className="text-gray-400 text-sm">No changes recorded yet.</p>
@@ -789,6 +839,7 @@ const TrackerPage = () => {
               <table className="w-full text-sm text-left">
                 <thead className={`sticky top-0 ${darkMode ? 'bg-[#1e293b] text-gray-400' : 'bg-slate-50 text-slate-500'}`}>
                   <tr>
+                    {isAdmin && <th className="p-2 w-8">✔</th>}
                     <th className="p-2">Old Value</th>
                     <th className="p-2">New Value</th>
                     <th className="p-2">Changed By</th>
@@ -796,8 +847,24 @@ const TrackerPage = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700">
-                  {cellHistory.map((h, i) => (
-                    <tr key={i}>
+                  {cellHistory.map((h, idx) => (
+                    <tr key={idx} className={selectedHistoryItems.includes(h._id) ? (darkMode ? 'bg-blue-900/30' : 'bg-blue-50') : ''}>
+                      {isAdmin && (
+                        <td className="p-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedHistoryItems.includes(h._id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedHistoryItems(prev => [...prev, h._id]);
+                              } else {
+                                setSelectedHistoryItems(prev => prev.filter(id => id !== h._id));
+                              }
+                            }}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </td>
+                      )}
                       <td className="p-2">{h.oldValue ? formatDate(h.oldValue) : '-'}</td>
                       <td className={`p-2 font-medium ${darkMode ? 'text-white' : 'text-blue-600'}`}>{h.newValue ? formatDate(h.newValue) : '-'}</td>
                       <td className="p-2 text-xs">{h.changedBy?.name || 'N/A'}</td>
