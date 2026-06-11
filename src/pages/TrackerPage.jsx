@@ -901,12 +901,7 @@ const TrackerPage = () => {
                   className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`}
                 />
               </div>
-              {customCols.map(col => (
-                <div className="field" key={col}>
-                  <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-indigo-300' : 'text-indigo-700'}`}>{col.toUpperCase()}</label>
-                  <InputText value={formData[col] || ''} onChange={(e) => setFormData({ ...formData, [col]: e.target.value })} disabled={!isFieldEditable(col)} className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-indigo-900/20 border-indigo-500/30 text-white' : 'bg-indigo-50 border-indigo-200'}`} />
-                </div>
-              ))}
+              
             </div>
           </TabPanel>
           <TabPanel header="Labdip & Photo">
