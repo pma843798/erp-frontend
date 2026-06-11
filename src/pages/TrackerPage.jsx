@@ -25,7 +25,6 @@ import {
 } from 'lucide-react';
 import { exportMasterLedger, exportHistoryLog, exportCSV } from '../utils/excelExport';
 
-// Updated standard fields – removed testReportDue, added new fields
 const standardFields = [
   '_id', 'createdAt', 'updatedAt', '__v', 'history',
   'catNo', 'styleNo', 'factoryFOB', 'vendorPhotoShootDate',
@@ -242,7 +241,7 @@ const TrackerPage = () => {
       catNo: '', styleNo: '', factoryFOB: null, vendorPhotoShootDate: null,
       labdipQualityDeskloomDue: null, labdipPlannedDate: null, labdipPlannedStatus: 'Pending',
       photoSampleDue: null, photoSamplePlannedDate: null, photoSamplePlannedStatus: 'Pending',
-      // removed testReportDue
+      
       fabInHousePlannedDate: null,   // new
       fptDueDate: null,              // new
       plannedFPT: null, plannedFPTStatus: 'Pending',
@@ -536,7 +535,7 @@ const TrackerPage = () => {
     { field: 'photoSampleDue', header: 'Photo Sample (Due Date)', isDate: true, style: { width: '110px' } },
     { field: 'photoSamplePlannedDate', header: 'Photo Sample (Planned Date)', isDate: true, style: { width: '110px' } },
     { field: 'photoSamplePlannedStatus', header: 'Photo Sample (Status)', isStatus: true },
-    // REMOVED testReportDue entirely
+
     // FPT Due (new) and then FPT Planned Date & Status
     { field: 'fptDueDate', header: 'FPT (Due)', isDate: true, style: { width: '110px' } },
     { field: 'plannedFPT', header: 'FPT (Planned Date)', isDate: true, style: { width: '110px' } },
@@ -549,7 +548,6 @@ const TrackerPage = () => {
     { field: 'gsmColorLotsPlanned', header: 'Gsm/Color (Planned Date)', isDate: true, style: { width: '110px' } },
     { field: 'gsmColorLotsPlannedStatus', header: 'Gsm/Color (Status)', isStatus: true },
     { field: 'remark', header: 'Remark' },
-    ...customCols.map(col => ({ field: col, header: col.toUpperCase() })),
     { field: 'actions', header: 'Edit', frozen: true, style: { width: '80px' } }
   ], [isAdmin, customCols]);
 
