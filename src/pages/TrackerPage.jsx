@@ -21,7 +21,7 @@ import AIChat from '../components/AIChat';
   
 import {
   LayoutDashboard, LogOut, Plus, Trash2, Download, Printer,
-  Sun, Moon, Columns, Edit3, Users, Database, Grid, FilterX
+  Sun, Moon, Columns, Edit3, Users, Database, Grid, FilterX, Menu
 } from 'lucide-react';
 import { exportMasterLedger, exportHistoryLog, exportCSV } from '../utils/excelExport';
 
@@ -228,6 +228,9 @@ const TrackerPage = () => {
     navigate('/tracker');
     setFilter(null);
   };
+
+  // hasData defined before toolbarLeft to avoid initialization error
+  const hasData = filteredData.length > 0;
 
   const openNew = useCallback(() => {
     setIsEditing(false);
@@ -510,27 +513,26 @@ const TrackerPage = () => {
     <Button icon="pi pi-pencil" className={`p-button-rounded p-button-text ${darkMode ? '!text-cyan-400 hover:!bg-cyan-400/10' : '!text-blue-600 hover:!bg-blue-50'}`} onClick={() => openEdit(rowData)} />
   ), [darkMode, openEdit]);
 
-  // YAHAN MAINE TEXT-WRAP ENABLE KIYA HAI AUR 'DUO' KI JAGAH 'Due Date' KIYA HAI
   const allColumnDefs = useMemo(() => [
     ...(isAdmin ? [{ field: 'selection', header: '', body: null, frozen: true, style: { width: '50px' } }] : []),
     { field: 'catNo', header: 'CAT NO', frozen: true, style: { width: '160px' } },
     { field: 'styleNo', header: 'Style No.', frozen: true, style: { width: '180px' } },
     { field: 'factoryFOB', header: 'Factory FOB', isDate: true, style: { width: '110px' } },
     { field: 'vendorPhotoShootDate', header: 'PhotoShoot Date', isDate: true, style: { width: '110px' } },
-    { field: 'labdipQualityDeskloomDue', header: 'Due Date (Labdip)', isDate: true, style: { width: '110px' } },
-    { field: 'labdipPlannedDate', header: 'PLANNED DATE (Labdip)', isDate: true, style: { minWidth: '160px' } },
-    { field: 'labdipPlannedStatus', header: 'STATUS (Labdip)', isStatus: true },
-    { field: 'photoSampleDue', header: 'Due Date (Photo Sample)', isDate: true, style: { width: '110px' } },
-    { field: 'photoSamplePlannedDate', header: 'PLANNED DATE (Photo Sample)', isDate: true, style: { minWidth: '160px' } },
-    { field: 'photoSamplePlannedStatus', header: 'STATUS (Photo Sample)', isStatus: true },
-    { field: 'testReportDue', header: 'Due Date (Test Report)', isDate: true, style: { width: '110px' } },
-    { field: 'plannedFPT', header: 'PLANNED DATE (FPT)', isDate: true, style: { minWidth: '160px' } },
-    { field: 'plannedFPTStatus', header: 'STATUS (FPT)', isStatus: true },
-    { field: 'plannedGPT', header: 'PLANNED DATE (GPT)', isDate: true, style: { minWidth: '160px' } },
-    { field: 'plannedGPTStatus', header: 'STATUS (GPT)', isStatus: true },
-    { field: 'gsmColorLotsDue', header: 'Due Date (GSM/Color)', isDate: true, style: { width: '110px' } },
-    { field: 'gsmColorLotsPlanned', header: 'PLANNED DATE (GSM/Color)', isDate: true, style: { minWidth: '160px' } },
-    { field: 'gsmColorLotsPlannedStatus', header: 'STATUS (GSM/Color)', isStatus: true },
+    { field: 'labdipQualityDeskloomDue', header: 'Labdip (Due Date)', isDate: true, style: { width: '110px' } },
+    { field: 'labdipPlannedDate', header: 'LAB DIP (Planned Date)', isDate: true, style: { width: '110px' } },
+    { field: 'labdipPlannedStatus', header: 'LAB DIP (Status)', isStatus: true },
+    { field: 'photoSampleDue', header: 'Photo Sample (Due Date)', isDate: true, style: { width: '110px' } },
+    { field: 'photoSamplePlannedDate', header: 'PHOTO SAMPLE (Planned Date)', isDate: true, style: { width: '110px' } },
+    { field: 'photoSamplePlannedStatus', header: 'PHOTO SAMPLE (Status)', isStatus: true },
+    { field: 'testReportDue', header: 'Test Report (Due Date)', isDate: true, style: { width: '110px' } },
+    { field: 'plannedFPT', header: 'FPT (Planned Date)', isDate: true, style: { width: '110px' } },
+    { field: 'plannedFPTStatus', header: 'FPT (Status)', isStatus: true },
+    { field: 'plannedGPT', header: 'GPT (Planned Date)', isDate: true, style: { width: '110px' } },
+    { field: 'plannedGPTStatus', header: 'GPT (Status)', isStatus: true },
+    { field: 'gsmColorLotsDue', header: 'GSM/Color (Due Date)', isDate: true, style: { width: '110px' } },
+    { field: 'gsmColorLotsPlanned', header: 'GSM/COLOR (Planned Date)', isDate: true, style: { width: '110px' } },
+    { field: 'gsmColorLotsPlannedStatus', header: 'GSM/COLOR (Status)', isStatus: true },
     { field: 'remark', header: 'Remark' },
     ...customCols.map(col => ({ field: col, header: col.toUpperCase() })),
     { field: 'actions', header: 'Edit', frozen: true, style: { width: '80px' } }
@@ -538,8 +540,28 @@ const TrackerPage = () => {
 
   const visibleColumns = useMemo(() => allColumnDefs.filter(col => !hiddenColumns.includes(col.field)), [allColumnDefs, hiddenColumns]);
 
+  // Two-line header renderer with activity name big, bracket small
+  const renderHeader = (col) => {
+    if (!col.header || !col.header.includes('(')) return col.header;
+    const idx = col.header.indexOf('(');
+    const main = col.header.substring(0, idx).trim();
+    const sub = col.header.substring(idx).trim();
+    return (
+      <div className="flex flex-col items-center justify-center leading-tight">
+        <span className="font-semibold text-base">{main}</span>   {/* Increased to text-base like Factory FOB */}
+        <span className="text-[11px] font-medium opacity-80">{sub}</span>
+      </div>
+    );
+  };
+
+  // toolbarLeft WITHOUT Clear Filter button (removed)
   const toolbarLeft = useMemo(() => (
-    <div className="flex gap-3">
+    <div className="flex gap-3 items-center">
+      {hasData && (
+        <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+          <Menu size={20} />
+        </button>
+      )}
       {(isAdmin || isPMA) && (
         <button onClick={openNew} className="flex items-center gap-2 bg-[#0080ff] hover:bg-blue-600 px-5 py-2 rounded-xl font-semibold shadow-sm transition-all text-white text-sm">
           <Plus size={16} /> New Entry
@@ -555,13 +577,9 @@ const TrackerPage = () => {
           </button>
         </div>
       )}
-      {filter && (
-        <button onClick={clearFilter} className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-amber-500/20 text-amber-600 border border-amber-300 hover:bg-amber-500/30 transition-all">
-          <FilterX size={16} /> Clear Filter: {filter.replace('-', ' ').toUpperCase()}
-        </button>
-      )}
+      {/* Clear Filter button removed as per request */}
     </div>
-  ), [isAdmin, isPMA, openNew, customCols.length, selectedRows.length, confirmDelete, darkMode, filter, clearFilter]);
+  ), [isAdmin, isPMA, openNew, customCols.length, selectedRows.length, confirmDelete, darkMode, hasData]);
 
   const toolbarRight = useMemo(() => (
     <div className="flex gap-3 items-center flex-wrap">
@@ -623,9 +641,6 @@ const TrackerPage = () => {
     </button>
   ), [darkMode, navigate]);
 
-  const totalEntries = filteredData.length;
-  const pendingCount = filteredData.filter(row => row.pendingStatus && !['Approved', 'Completed'].includes(row.pendingStatus)).length;
-
   const renderApprovalFields = (statusField, byField, dateField) => {
     if (formData[statusField] !== 'Approved') return null;
     return (
@@ -654,8 +669,6 @@ const TrackerPage = () => {
       </div>
     );
   };
-
-  const hasData = filteredData.length > 0;
 
   return (
     <div className={`flex h-screen w-full ${darkMode ? 'bg-[#0f172a] text-white' : 'bg-[#f4f7fb] text-slate-900'}`}>
@@ -702,38 +715,14 @@ const TrackerPage = () => {
       )}
 
       <main className="flex-1 flex flex-col h-full overflow-hidden">
-        <header className="px-4 md:px-8 py-4 md:py-6 flex justify-between items-center shrink-0">
-          <div className="flex items-center gap-3">
-            {hasData && (
-              <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-            )}
-            <div>
-              <h2 className="text-2xl font-extrabold flex items-center gap-2">Master Ledger 📋</h2>
-              <p className={`mt-1 text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Manage all production entries, columns, and history logs.</p>
-              <div className="flex gap-4 mt-2">
-                <span className={`px-3 py-1 rounded-full text-xs font-bold ${darkMode ? 'bg-cyan-500/20 text-cyan-300' : 'bg-cyan-100 text-cyan-800'}`}>
-                  Total: {totalEntries}
-                </span>
-                <span className={`px-3 py-1 rounded-full text-xs font-bold ${darkMode ? 'bg-orange-500/20 text-orange-300' : 'bg-orange-100 text-orange-800'}`}>
-                  Pending: {pendingCount}
-                </span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <button onClick={() => setDarkMode(!darkMode)} className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-sm ${darkMode ? 'bg-[#0080ff] text-white' : 'bg-[#00a2ff] text-white hover:bg-blue-500'}`}>{darkMode ? <Sun size={18} /> : <Moon size={18} />}</button>
-            <div className={`px-4 py-2 rounded-xl flex flex-col shadow-sm border ${darkMode ? 'bg-[#1e293b] border-gray-700' : 'bg-white border-gray-100'}`}><span className={`text-[9px] font-bold uppercase ${darkMode ? 'text-gray-400' : 'text-gray-400'}`}>Today's Date</span><span className="font-extrabold text-xs">{getTodayDate()}</span></div>
-          </div>
-        </header>
+        {/* Toolbar only */}
+        <div className="px-2 md:px-4 pt-2 pb-0 shrink-0">
+          <Toolbar left={toolbarLeft} right={toolbarRight} className={`rounded-xl border-none shadow-sm ${darkMode ? 'bg-[#1e293b]' : 'bg-white'}`} />
+        </div>
 
-        <div className="flex-1 px-4 md:px-8 pb-8 overflow-hidden flex flex-col">
-          <Toolbar left={toolbarLeft} right={toolbarRight} className={`mb-4 rounded-xl border-none shadow-sm ${darkMode ? 'bg-[#1e293b]' : 'bg-white'}`} />
-
-          <div className={`transition-all rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col border ${darkMode ? 'bg-[#1e293b] border-gray-800' : 'bg-white border-gray-100'}`} style={{ height: '100%', minHeight: 0 }}>
+        {/* Table full height */}
+        <div className="flex-1 px-2 md:px-4 pb-2 overflow-hidden flex flex-col" style={{ minHeight: 0 }}>
+          <div className={`transition-all rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col border ${darkMode ? 'bg-[#1e293b] border-gray-800' : 'bg-white border-gray-100'}`}>
             <DataTable
               value={filteredData}
               selection={selectedRows}
@@ -756,12 +745,15 @@ const TrackerPage = () => {
               {visibleColumns.map(col => {
                 if (col.field === 'selection') return <Column key="sel" selectionMode="multiple" frozen alignFrozen="left" style={col.style} />;
                 if (col.field === 'actions') return <Column key="act" body={actionBodyTemplate} header="Edit" frozen alignFrozen="right" style={col.style} />;
+                
+                const headerContent = renderHeader(col);
+                
                 if (col.isStatus) {
                   return (
                     <Column
                       key={col.field}
                       field={col.field}
-                      header={col.header}
+                      header={headerContent}
                       sortable
                       filter
                       body={createStatusBody(col.field)}
@@ -775,7 +767,7 @@ const TrackerPage = () => {
                   <Column
                     key={col.field}
                     field={col.field}
-                    header={col.header}
+                    header={headerContent}
                     sortable
                     filter
                     body={createClickableBody(col.field, isDate)}
