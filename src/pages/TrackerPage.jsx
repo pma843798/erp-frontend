@@ -27,12 +27,13 @@ import { exportMasterLedger, exportHistoryLog, exportCSV } from '../utils/excelE
 
 const standardFields = [
   '_id', 'createdAt', 'updatedAt', '__v', 'history',
-  'catNo', 'styleNo', 'factoryFOB', 'vendorPhotoShootDate',
+  'catNo', 'styleNo', 'styleName',           // ← styleName added
+  'factoryFOB', 'vendorPhotoShootDate',
   'labdipQualityDeskloomDue', 'labdipPlannedDate', 'labdipPlannedStatus',
   'photoSampleDue', 'photoSamplePlannedDate', 'photoSamplePlannedStatus',
-  'fabInHousePlannedDate',                        // new
-  'fptDueDate', 'plannedFPT', 'plannedFPTStatus',   // new due + existing
-  'gptDueDate', 'plannedGPT', 'plannedGPTStatus',   // new due + existing
+  'fabInHousePlannedDate',
+  'fptDueDate', 'plannedFPT', 'plannedFPTStatus',
+  'gptDueDate', 'plannedGPT', 'plannedGPTStatus',
   'gsmColorLotsDue', 'gsmColorLotsPlanned', 'gsmColorLotsPlannedStatus', 'remark',
   'approvalStatus', 'pendingStatus', 'buyerApproval', 'priority',
   'labdipApprovedBy', 'labdipApprovedDate',
@@ -81,14 +82,13 @@ const TrackerPage = () => {
   const isPMA = user?.role === 'pma';
   const isVendor = user?.role === 'vendor';
 
-  // Vendor can edit these planned/status fields, including the new fabInHousePlannedDate
   const redFields = [
     'labdipPlannedDate', 'labdipPlannedStatus',
     'photoSamplePlannedDate', 'photoSamplePlannedStatus',
     'plannedFPT', 'plannedFPTStatus',
     'plannedGPT', 'plannedGPTStatus',
     'gsmColorLotsPlanned', 'gsmColorLotsPlannedStatus',
-    'fabInHousePlannedDate'   // added for vendor
+    'fabInHousePlannedDate'
   ];
 
   const [darkMode, setDarkMode] = useState(() => {
@@ -238,15 +238,13 @@ const TrackerPage = () => {
   const openNew = useCallback(() => {
     setIsEditing(false);
     const initialData = {
-      catNo: '', styleNo: '', factoryFOB: null, vendorPhotoShootDate: null,
+      catNo: '', styleNo: '', styleName: '',   // ← styleName added
+      factoryFOB: null, vendorPhotoShootDate: null,
       labdipQualityDeskloomDue: null, labdipPlannedDate: null, labdipPlannedStatus: 'Pending',
       photoSampleDue: null, photoSamplePlannedDate: null, photoSamplePlannedStatus: 'Pending',
-      
-      fabInHousePlannedDate: null,   // new
-      fptDueDate: null,              // new
-      plannedFPT: null, plannedFPTStatus: 'Pending',
-      gptDueDate: null,              // new
-      plannedGPT: null, plannedGPTStatus: 'Pending',
+      fabInHousePlannedDate: null,
+      fptDueDate: null, plannedFPT: null, plannedFPTStatus: 'Pending',
+      gptDueDate: null, plannedGPT: null, plannedGPTStatus: 'Pending',
       gsmColorLotsDue: null, gsmColorLotsPlanned: null, gsmColorLotsPlannedStatus: 'Pending',
       approvalStatus: 'Pending', pendingStatus: 'In Progress',
       buyerApproval: 'Pending', priority: 'Medium',
@@ -520,27 +518,23 @@ const TrackerPage = () => {
     <Button icon="pi pi-pencil" className={`p-button-rounded p-button-text ${darkMode ? '!text-cyan-400 hover:!bg-cyan-400/10' : '!text-blue-600 hover:!bg-blue-50'}`} onClick={() => openEdit(rowData)} />
   ), [darkMode, openEdit]);
 
-  // Column definitions in the exact requested order
   const allColumnDefs = useMemo(() => [
     ...(isAdmin ? [{ field: 'selection', header: '', body: null, frozen: true, style: { width: '50px' } }] : []),
     { field: 'catNo', header: 'CAT NO', frozen: true, style: { width: '160px' } },
     { field: 'styleNo', header: 'Style No.', frozen: true, style: { width: '180px' } },
+    { field: 'styleName', header: 'Style Name', frozen: true, style: { width: '180px' } },  // ← NEW
     { field: 'factoryFOB', header: 'Factory FOB', isDate: true, style: { width: '110px' } },
     { field: 'vendorPhotoShootDate', header: 'PhotoShoot Date', isDate: true, style: { width: '110px' } },
     { field: 'labdipQualityDeskloomDue', header: 'Labdip (Due Date)', isDate: true, style: { width: '110px' } },
     { field: 'labdipPlannedDate', header: 'Labdip (Planned Date)', isDate: true, style: { width: '110px' } },
     { field: 'labdipPlannedStatus', header: 'Labdip (Status)', isStatus: true },
-    // NEW: Fab in house (Planned date)
     { field: 'fabInHousePlannedDate', header: 'Fab in house (Planned date)', isDate: true, style: { width: '110px' } },
     { field: 'photoSampleDue', header: 'Photo Sample (Due Date)', isDate: true, style: { width: '110px' } },
     { field: 'photoSamplePlannedDate', header: 'Photo Sample (Planned Date)', isDate: true, style: { width: '110px' } },
     { field: 'photoSamplePlannedStatus', header: 'Photo Sample (Status)', isStatus: true },
-
-    // FPT Due (new) and then FPT Planned Date & Status
     { field: 'fptDueDate', header: 'FPT (Due)', isDate: true, style: { width: '110px' } },
     { field: 'plannedFPT', header: 'FPT (Planned Date)', isDate: true, style: { width: '110px' } },
     { field: 'plannedFPTStatus', header: 'FPT (Status)', isStatus: true },
-    // GPT Due (new) and then GPT Planned Date & Status
     { field: 'gptDueDate', header: 'GPT (Due)', isDate: true, style: { width: '110px' } },
     { field: 'plannedGPT', header: 'GPT (Planned Date)', isDate: true, style: { width: '110px' } },
     { field: 'plannedGPTStatus', header: 'GPT (Status)', isStatus: true },
@@ -548,6 +542,7 @@ const TrackerPage = () => {
     { field: 'gsmColorLotsPlanned', header: 'Gsm/Color (Planned Date)', isDate: true, style: { width: '110px' } },
     { field: 'gsmColorLotsPlannedStatus', header: 'Gsm/Color (Status)', isStatus: true },
     { field: 'remark', header: 'Remark' },
+    ...customCols.map(col => ({ field: col, header: col.toUpperCase() })),
     { field: 'actions', header: 'Edit', frozen: true, style: { width: '80px' } }
   ], [isAdmin, customCols]);
 
@@ -886,6 +881,11 @@ const TrackerPage = () => {
                 <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Style No. *</label>
                 <InputText value={formData.styleNo || ''} onChange={(e) => setFormData({ ...formData, styleNo: e.target.value })} disabled={!isFieldEditable('styleNo')} className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`} />
               </div>
+              {/* NEW Style Name input */}
+              <div className="field">
+                <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Style Name</label>
+                <InputText value={formData.styleName || ''} onChange={(e) => setFormData({ ...formData, styleName: e.target.value })} disabled={!isFieldEditable('styleName')} className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`} />
+              </div>
               <div className="field">
                 <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Factory FOB</label>
                 <Calendar value={formData.factoryFOB ? new Date(formData.factoryFOB) : null} onChange={(e) => setFormData({ ...formData, factoryFOB: dateToStr(e.value) })} disabled={!isFieldEditable('factoryFOB')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
@@ -901,7 +901,6 @@ const TrackerPage = () => {
                   className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`}
                 />
               </div>
-              
             </div>
           </TabPanel>
           <TabPanel header="Labdip & Photo">
@@ -923,7 +922,6 @@ const TrackerPage = () => {
                 <Dropdown value={formData.labdipPlannedStatus || 'Pending'} options={statusOptions} onChange={(e) => setFormData({ ...formData, labdipPlannedStatus: e.value })} disabled={!isFieldEditable('labdipPlannedStatus')} className="w-full" placeholder="Select Status" />
                 {renderApprovalFields('labdipPlannedStatus', 'labdipApprovedBy', 'labdipApprovedDate')}
               </div>
-              {/* NEW: Fab in house Planned date field */}
               <div className="field">
                 <label className={`block text-xs font-bold mb-1 ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Fab in house Planned Date</label>
                 <Calendar value={formData.fabInHousePlannedDate ? new Date(formData.fabInHousePlannedDate) : null} onChange={(e) => setFormData({ ...formData, fabInHousePlannedDate: dateToStr(e.value) })} disabled={!isFieldEditable('fabInHousePlannedDate')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
@@ -945,7 +943,6 @@ const TrackerPage = () => {
           </TabPanel>
           <TabPanel header="FPT, GPT & GSM">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-2">
-              {/* REMOVED Test Report Due Date. Added FPT Due and GPT Due */}
               <div className="field">
                 <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>FPT Due Date</label>
                 <Calendar value={formData.fptDueDate ? new Date(formData.fptDueDate) : null} onChange={(e) => setFormData({ ...formData, fptDueDate: dateToStr(e.value) })} disabled={!isFieldEditable('fptDueDate')} dateFormat="dd/mm/yy" className="w-full" inputClassName="p-2 text-sm rounded-lg" showIcon />
