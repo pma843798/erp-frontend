@@ -542,7 +542,7 @@ const TrackerPage = () => {
     { field: 'gsmColorLotsPlanned', header: 'Gsm/Color (Planned Date)', isDate: true, style: { width: '110px' } },
     { field: 'gsmColorLotsPlannedStatus', header: 'Gsm/Color (Status)', isStatus: true },
     { field: 'remark', header: 'Remark' },
-    ...customCols.map(col => ({ field: col, header: col.toUpperCase() })),
+    
     { field: 'actions', header: 'Edit', frozen: true, style: { width: '80px' } }
   ], [isAdmin, customCols]);
 
