@@ -18,10 +18,11 @@ import { Checkbox } from 'primereact/checkbox';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import AIChat from '../components/AIChat';
+import * as XLSX from 'xlsx';
 
 import {
   LayoutDashboard, LogOut, Plus, Trash2, Download, Printer,
-  Sun, Moon, Columns, Edit3, Users, Database, Grid, FilterX, Menu
+  Sun, Moon, Columns, Edit3, Users, Database, Grid, FilterX, Menu, Upload
 } from 'lucide-react';
 import { exportMasterLedger, exportHistoryLog, exportCSV } from '../utils/excelExport';
 
@@ -51,6 +52,59 @@ const statusOptions = [
   { label: 'REJECT', value: 'Rejected' }
 ];
 
+// ---------- FIXED DATE PARSER ----------
+const parseExcelDate = (val) => {
+  if (val === undefined || val === null || val === '') return null;
+
+  // 1. Excel serial number (number)
+  if (typeof val === 'number') {
+    const jsDate = new Date((val - 25569) * 86400 * 1000);
+    if (!isNaN(jsDate.getTime())) {
+      return jsDate.toISOString().split('T')[0]; // yyyy-mm-dd
+    }
+    return null;
+  }
+
+  const str = String(val).trim();
+  if (str === '') return null;
+
+  // 2. Numeric string (Excel serial)
+  if (/^\d+$/.test(str)) {
+    const num = parseInt(str, 10);
+    const jsDate = new Date((num - 25569) * 86400 * 1000);
+    if (!isNaN(jsDate.getTime())) {
+      return jsDate.toISOString().split('T')[0];
+    }
+    // fall through to other parsers if not a valid serial
+  }
+
+  // 3. dd-MMM-yy (e.g., 10-Sep-26)
+  const ddMmmYyRegex = /^(\d{1,2})[-/ ]([A-Za-z]{3})[-/ ](\d{2})$/;
+  const match = str.match(ddMmmYyRegex);
+  if (match) {
+    const day = parseInt(match[1], 10);
+    const monthStr = match[2].toLowerCase();
+    const year = 2000 + parseInt(match[3], 10);   // assume 20xx
+    const months = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
+    const month = months[monthStr];
+    if (month !== undefined && day > 0) {
+      const date = new Date(year, month, day);
+      if (!isNaN(date.getTime())) {
+        return `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+      }
+    }
+  }
+
+  // 4. Standard JS parsing (fallback)
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) {
+    return d.toISOString().split('T')[0];
+  }
+
+  return null;
+};
+// -------------------------------------
+
 const TrackerPage = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -77,9 +131,14 @@ const TrackerPage = () => {
   const [confirmState, setConfirmState] = useState({ visible: false, message: '', accept: null });
   const [filter, setFilter] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  
-  // ---- NEW: State for catalog filter ----
   const [selectedCatalog, setSelectedCatalog] = useState(null);
+
+  // Import states
+  const [importDialog, setImportDialog] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [previewEntries, setPreviewEntries] = useState([]);
+  const [showPreview, setShowPreview] = useState(false);
 
   const isAdmin = user?.role === 'admin';
   const isPMA = user?.role === 'pma';
@@ -163,14 +222,6 @@ const TrackerPage = () => {
     return `${d}/${m}/${y}`;
   }, []);
 
-  const getTodayDate = useCallback(() => {
-    const date = new Date();
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${d}/${m}/${y}`;
-  }, []);
-
   const cleanData = useCallback((row) => {
     const { _id, createdAt, updatedAt, __v, history, ...rest } = row;
     return rest;
@@ -200,7 +251,6 @@ const TrackerPage = () => {
     loadData();
   }, [loadData]);
 
-  // ---- NEW: Catalog options with latest catalog on top ----
   const catalogOptions = useMemo(() => {
     const catMap = new Map();
     data.forEach(row => {
@@ -212,14 +262,12 @@ const TrackerPage = () => {
       }
     });
     return Array.from(catMap.values())
-      .sort((a, b) => b.latest - a.latest)  // latest entry wala catalog upar
+      .sort((a, b) => b.latest - a.latest)
       .map(item => ({ label: item.catNo, value: item.catNo }));
   }, [data]);
 
-  // ---- UPDATED filteredData: includes catalog filter & latest first ----
   const filteredData = useMemo(() => {
     let result = data;
-
     if (filter && filter !== 'all') {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -255,13 +303,9 @@ const TrackerPage = () => {
           result = data;
       }
     }
-
-    // Apply catalog filter
     if (selectedCatalog) {
       result = result.filter(item => item.catNo === selectedCatalog);
     }
-
-    // Sort by createdAt descending – latest entries first
     return [...result].sort((a, b) => {
       const dateA = new Date(a.createdAt || 0);
       const dateB = new Date(b.createdAt || 0);
@@ -365,6 +409,106 @@ const TrackerPage = () => {
       toast.current.show({ severity: 'error', summary: 'Error', detail: 'Failed to rename column.', life: 3000 });
     }
   }, [colToRename, renamedColName, customCols, renameColumn, loadData]);
+
+  // ========== IMPORT HANDLERS ==========
+  const handleParseFile = useCallback(async () => {
+    if (!importFile) {
+      toast.current?.show({ severity: 'warn', summary: 'No file', detail: 'Please select an Excel file.', life: 3000 });
+      return;
+    }
+    setImporting(true);
+    try {
+      const data = await importFile.arrayBuffer();
+      const workbook = XLSX.read(data, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+
+      if (jsonData.length === 0) {
+        toast.current?.show({ severity: 'warn', summary: 'Empty file', detail: 'No rows found.', life: 3000 });
+        setImporting(false);
+        return;
+      }
+
+      const headerMap = {
+        'CAT NO': 'catNo',
+        'Style No.': 'styleNo',
+        'Style Name': 'styleName',
+        'Factory FOB': 'factoryFOB',
+        'Photoshoot date': 'vendorPhotoShootDate',
+      };
+
+      const entries = jsonData.map(row => {
+        const entry = {
+          catNo: '',
+          styleNo: '',
+          styleName: '',
+          factoryFOB: null,
+          vendorPhotoShootDate: null,
+          labdipPlannedStatus: 'Pending',
+          photoSamplePlannedStatus: 'Pending',
+          plannedFPTStatus: 'Pending',
+          plannedGPTStatus: 'Pending',
+          gsmColorLotsPlannedStatus: 'Pending',
+          approvalStatus: 'Pending',
+          pendingStatus: 'In Progress',
+          buyerApproval: 'Pending',
+          priority: 'Medium',
+        };
+
+        Object.keys(row).forEach(excelHeader => {
+          const field = headerMap[excelHeader];
+          if (field) {
+            let val = row[excelHeader];
+            if (field === 'factoryFOB' || field === 'vendorPhotoShootDate') {
+              val = parseExcelDate(val);
+            }
+            entry[field] = val;
+          } else {
+            entry[excelHeader] = row[excelHeader];
+          }
+        });
+
+        return entry;
+      });
+
+      setPreviewEntries(entries);
+      setImportDialog(false);
+      setShowPreview(true);
+    } catch (err) {
+      toast.current?.show({ severity: 'error', summary: 'Import error', detail: 'Could not read file.', life: 4000 });
+    } finally {
+      setImporting(false);
+      setImportFile(null);
+    }
+  }, [importFile]);
+
+  const confirmImport = useCallback(async () => {
+    if (!isAdmin) {
+      toast.current?.show({ severity: 'error', summary: 'Permission denied', detail: 'Only admin can import.', life: 3000 });
+      return;
+    }
+    const validEntries = previewEntries.filter(e => e.styleNo);
+    if (validEntries.length === 0) {
+      toast.current?.show({ severity: 'warn', summary: 'No valid rows', detail: 'All rows missing Style No.', life: 3000 });
+      return;
+    }
+    setImporting(true);
+    let success = 0;
+    for (const entry of validEntries) {
+      try {
+        await api.post('/tracker', entry);
+        success++;
+      } catch (err) {
+        console.error('Import failed:', entry.styleNo, err);
+      }
+    }
+    toast.current?.show({ severity: 'success', summary: 'Import finished', detail: `${success} of ${validEntries.length} imported.`, life: 4000 });
+    setShowPreview(false);
+    setPreviewEntries([]);
+    loadData();
+    setImporting(false);
+  }, [isAdmin, previewEntries, loadData]);
 
   const handleExportMasterLedger = useCallback(() => {
     const rows = exportSelectedOnly && selectedRows.length ? selectedRows : filteredData;
@@ -488,10 +632,7 @@ const TrackerPage = () => {
               ? (darkMode ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' : 'bg-orange-100 text-orange-700 border border-orange-200')
               : (darkMode ? 'hover:text-cyan-400' : 'hover:text-blue-600')
           }`}
-          onClick={(e) => {
-            e.stopPropagation();
-            showCellHistory(e, field, rowData);
-          }}
+          onClick={(e) => { e.stopPropagation(); showCellHistory(e, field, rowData); }}
           title={hasHistory ? "Updated recently" : "View History"}
         >
           {display || '-'}
@@ -509,39 +650,27 @@ const TrackerPage = () => {
     else if (status === 'Pending') displayStatus = 'PENDING';
     else if (status === 'Rejected') displayStatus = 'REJECT';
     else displayStatus = status.toUpperCase();
-
     const approvalInfo = approvalFieldsMap[field];
     const approvedBy = approvalInfo && rowData[approvalInfo.by];
     const approvedDate = approvalInfo && rowData[approvalInfo.date];
-
     return (
       <div className="flex flex-col items-start gap-2">
         <div className="flex items-center gap-2">
           <span className={`px-3 py-1 rounded-full text-xs font-bold border inline-flex items-center gap-1 ${getStatusBadgeStyles(status)}`}>
             {displayStatus}
             {hasHistory && (
-              <div
-                className="w-2 h-2 rounded-full bg-orange-500 cursor-pointer"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  showCellHistory(e, field, rowData);
-                }}
-                title="View status change history"
-              />
+              <div className="w-2 h-2 rounded-full bg-orange-500 cursor-pointer"
+                onClick={(e) => { e.stopPropagation(); showCellHistory(e, field, rowData); }}
+                title="View status change history" />
             )}
           </span>
         </div>
         {status === 'Approved' && approvedBy && (
           <div className={`flex flex-col items-start gap-0.5 text-sm font-semibold ${darkMode ? 'text-green-300' : 'text-green-700'}`}>
             <span>✓ {approvedBy.split('(')[0].trim()}</span>
-            <span
-              className="cursor-pointer hover:text-blue-500 transition-colors flex items-center gap-1"
-              onClick={(e) => {
-                e.stopPropagation();
-                showCellHistory(e, approvalInfo.date, rowData);
-              }}
-              title="View approval date history"
-            >
+            <span className="cursor-pointer hover:text-blue-500 transition-colors flex items-center gap-1"
+              onClick={(e) => { e.stopPropagation(); showCellHistory(e, approvalInfo.date, rowData); }}
+              title="View approval date history">
               📅 {approvedDate ? formatDate(approvedDate) : '--'}
             </span>
           </div>
@@ -614,6 +743,11 @@ const TrackerPage = () => {
         </button>
       )}
       {isAdmin && (
+        <button onClick={() => setImportDialog(true)} className="flex items-center gap-2 bg-[#22c55e] hover:bg-green-600 px-5 py-2 rounded-xl font-semibold shadow-sm transition-all text-white text-sm">
+          <Upload size={16} /> Import Excel
+        </button>
+      )}
+      {isAdmin && (
         <div className="flex gap-2">
           <button onClick={confirmDelete} disabled={selectedRows.length === 0} className="flex items-center gap-2 bg-red-500 hover:bg-red-600 px-5 py-2 rounded-xl text-sm font-semibold shadow-sm transition-all disabled:opacity-50 text-white ml-2">
             <Trash2 size={16} /> Delete
@@ -621,60 +755,24 @@ const TrackerPage = () => {
         </div>
       )}
     </div>
-  ), [isAdmin, isPMA, openNew, customCols.length, selectedRows.length, confirmDelete, darkMode, hasData]);
+  ), [isAdmin, isPMA, openNew, selectedRows.length, confirmDelete, darkMode, hasData]);
 
-  // ---- UPDATED toolbarRight: includes Catalog dropdown ----
   const toolbarRight = useMemo(() => (
     <div className="flex gap-3 items-center flex-wrap">
-      {/* Catalog filter dropdown */}
-      <Dropdown
-        value={selectedCatalog}
-        options={catalogOptions}
-        onChange={(e) => setSelectedCatalog(e.value)}
-        placeholder="Select Catalog"
-        showClear
-        className="w-[180px]"
-      />
-
+      <Dropdown value={selectedCatalog} options={catalogOptions} onChange={(e) => setSelectedCatalog(e.value)} placeholder="Select Catalog" showClear className="w-[180px]" />
       <div className="flex items-center gap-2">
         <Checkbox inputId="exportSelected" checked={exportSelectedOnly} onChange={e => setExportSelectedOnly(e.checked)} disabled={selectedRows.length === 0} />
         <label htmlFor="exportSelected" className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Export Selected</label>
       </div>
-      <button onClick={handleExportMasterLedger} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}>
-        <Download size={16} /> Excel (Ledger)
-      </button>
-      <button onClick={handleExportHistoryLog} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}>
-        <Download size={16} /> Excel (History)
-      </button>
-      <button onClick={handleExportCSV} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}>
-        <Download size={16} /> CSV
-      </button>
-      <button onClick={() => window.print()} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}>
-        <Printer size={16} /> Print
-      </button>
+      <button onClick={handleExportMasterLedger} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}><Download size={16} /> Excel (Ledger)</button>
+      <button onClick={handleExportHistoryLog} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}><Download size={16} /> Excel (History)</button>
+      <button onClick={handleExportCSV} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}><Download size={16} /> CSV</button>
+      <button onClick={() => window.print()} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}><Printer size={16} /> Print</button>
       {isAdmin && (
-        <MultiSelect
-          value={hiddenColumns}
-          options={allColumnDefs.filter(col => col.field !== 'selection' && col.field !== 'actions').map(col => ({ label: col.header, value: col.field }))}
-          onChange={(e) => setHiddenColumns(e.value)}
-          placeholder="Hide Columns"
-          className="max-w-[200px]"
-          display="chip"
-        />
+        <MultiSelect value={hiddenColumns} options={allColumnDefs.filter(col => col.field !== 'selection' && col.field !== 'actions').map(col => ({ label: col.header, value: col.field }))} onChange={(e) => setHiddenColumns(e.value)} placeholder="Hide Columns" className="max-w-[200px]" display="chip" />
       )}
     </div>
-  ), [
-    exportSelectedOnly,
-    selectedRows,
-    handleExportMasterLedger,
-    handleExportHistoryLog,
-    handleExportCSV,
-    isAdmin,
-    allColumnDefs,
-    darkMode,
-    selectedCatalog,
-    catalogOptions
-  ]);
+  ), [exportSelectedOnly, selectedRows, handleExportMasterLedger, handleExportHistoryLog, handleExportCSV, isAdmin, allColumnDefs, darkMode, selectedCatalog, catalogOptions]);
 
   const dialogFooter = useMemo(() => (
     <div className="flex justify-end gap-3 mt-4">
@@ -690,18 +788,9 @@ const TrackerPage = () => {
   }, [isAdmin, isPMA, isVendor]);
 
   const NavItem = useCallback(({ icon: Icon, label, path, active }) => (
-    <button
-      onClick={() => {
-        navigate(path);
-        setSidebarOpen(false);
-      }}
-      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${active
-        ? 'bg-[#0080ff] text-white shadow-md'
-        : (darkMode ? 'text-gray-400 hover:bg-white/5 hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900')
-      }`}
-    >
-      <Icon size={20} />
-      {label}
+    <button onClick={() => { navigate(path); setSidebarOpen(false); }}
+      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${active ? 'bg-[#0080ff] text-white shadow-md' : (darkMode ? 'text-gray-400 hover:bg-white/5 hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900')}`}>
+      <Icon size={20} /> {label}
     </button>
   ), [darkMode, navigate]);
 
@@ -711,24 +800,11 @@ const TrackerPage = () => {
       <div className="field md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 mt-2 p-3 rounded-lg border border-green-500/30 bg-green-50/10">
         <div>
           <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-green-400' : 'text-green-700'}`}>Approved By</label>
-          <InputText
-            value={formData[byField] || ''}
-            onChange={(e) => setFormData({ ...formData, [byField]: e.target.value })}
-            placeholder="Enter name"
-            disabled={!isFieldEditable(byField)}
-            className={`w-full p-2 text-sm ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`}
-          />
+          <InputText value={formData[byField] || ''} onChange={(e) => setFormData({ ...formData, [byField]: e.target.value })} placeholder="Enter name" disabled={!isFieldEditable(byField)} className={`w-full p-2 text-sm ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`} />
         </div>
         <div>
           <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-green-400' : 'text-green-700'}`}>Approved Date</label>
-          <Calendar
-            value={formData[dateField] ? new Date(formData[dateField]) : null}
-            onChange={(e) => setFormData({ ...formData, [dateField]: dateToStr(e.value) })}
-            dateFormat="dd/mm/yy"
-            disabled={!isFieldEditable(dateField)}
-            className="w-full"
-            inputClassName="p-2 text-sm"
-          />
+          <Calendar value={formData[dateField] ? new Date(formData[dateField]) : null} onChange={(e) => setFormData({ ...formData, [dateField]: dateToStr(e.value) })} dateFormat="dd/mm/yy" disabled={!isFieldEditable(dateField)} className="w-full" inputClassName="p-2 text-sm" />
         </div>
       </div>
     );
@@ -737,20 +813,12 @@ const TrackerPage = () => {
   return (
     <div className={`flex h-screen w-full ${darkMode ? 'bg-[#0f172a] text-white' : 'bg-[#f4f7fb] text-slate-900'}`}>
       <Toast ref={toast} />
-      <ConfirmDialog visible={confirmState.visible} onHide={() => setConfirmState(prev => ({ ...prev, visible: false }))} message={confirmState.message}
-        header="Confirmation" icon="pi pi-exclamation-triangle" accept={confirmState.accept} />
+      <ConfirmDialog visible={confirmState.visible} onHide={() => setConfirmState(prev => ({ ...prev, visible: false }))} message={confirmState.message} header="Confirmation" icon="pi pi-exclamation-triangle" accept={confirmState.accept} />
 
       {hasData && (
         <>
-          {sidebarOpen && (
-            <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setSidebarOpen(false)} />
-          )}
-          <aside
-            className={`fixed top-0 left-0 z-50 w-[260px] h-full flex flex-col justify-between transition-transform duration-300 ease-in-out transform
-              ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-              ${darkMode ? 'bg-[#1e293b] border-gray-800' : 'bg-white border-gray-200 shadow-sm'}
-              border-r`}
-          >
+          {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setSidebarOpen(false)} />}
+          <aside className={`fixed top-0 left-0 z-50 w-[260px] h-full flex flex-col justify-between transition-transform duration-300 ease-in-out transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${darkMode ? 'bg-[#1e293b] border-gray-800' : 'bg-white border-gray-200 shadow-sm'} border-r`}>
             <div>
               <div className="p-6 pb-8 border-b border-transparent flex justify-between items-center">
                 <div className="flex items-center gap-3">
@@ -782,69 +850,22 @@ const TrackerPage = () => {
         <div className="px-2 md:px-4 pt-2 pb-0 shrink-0">
           <Toolbar left={toolbarLeft} right={toolbarRight} className={`rounded-xl border-none shadow-sm ${darkMode ? 'bg-[#1e293b]' : 'bg-white'}`} />
         </div>
-
         <div className="flex-1 px-2 md:px-4 pb-2 overflow-hidden flex flex-col" style={{ minHeight: 0 }}>
           <div className={`transition-all rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col border ${darkMode ? 'bg-[#1e293b] border-gray-800' : 'bg-white border-gray-100'}`}>
-            <DataTable
-              value={filteredData}
-              selection={selectedRows}
-              onSelectionChange={(e) => setSelectedRows(e.value)}
-              paginator rows={15} rowsPerPageOptions={[15, 30, 50]}
-              filterDisplay="row"
-              scrollable
-              scrollHeight="flex"
-              showGridlines
-              resizableColumns
-              columnResizeMode="expand"
-              loading={loading}
-              emptyMessage="No entries found. Click 'New Entry' to add."
-              className={`p-datatable-sm p-datatable-gridlines whitespace-nowrap ${darkMode ? 'custom-dark-table' : ''}`}
-              dataKey="_id"
-              tableStyle={{ minWidth: '120rem', borderCollapse: 'collapse' }}
-              style={{ height: '100%' }}
-              rowClassName={rowClassName}
-            >
+            <DataTable value={filteredData} selection={selectedRows} onSelectionChange={(e) => setSelectedRows(e.value)} paginator rows={15} rowsPerPageOptions={[15, 30, 50]} filterDisplay="row" scrollable scrollHeight="flex" showGridlines resizableColumns columnResizeMode="expand" loading={loading} emptyMessage="No entries found." className={`p-datatable-sm p-datatable-gridlines whitespace-nowrap ${darkMode ? 'custom-dark-table' : ''}`} dataKey="_id" tableStyle={{ minWidth: '120rem' }} style={{ height: '100%' }} rowClassName={rowClassName}>
               {visibleColumns.map(col => {
                 if (col.field === 'selection') return <Column key="sel" selectionMode="multiple" frozen alignFrozen="left" style={col.style} />;
                 if (col.field === 'actions') return <Column key="act" body={actionBodyTemplate} header="Edit" frozen alignFrozen="right" style={col.style} />;
-                
                 const headerContent = renderHeader(col);
-                
-                if (col.isStatus) {
-                  return (
-                    <Column
-                      key={col.field}
-                      field={col.field}
-                      header={headerContent}
-                      sortable
-                      filter
-                      body={createStatusBody(col.field)}
-                      style={{ ...col.style, width: '220px' }}
-                      headerStyle={{ whiteSpace: 'normal', wordWrap: 'break-word', lineHeight: '1.2' }}
-                    />
-                  );
-                }
-                const isDate = col.isDate || false;
-                return (
-                  <Column
-                    key={col.field}
-                    field={col.field}
-                    header={headerContent}
-                    sortable
-                    filter
-                    body={createClickableBody(col.field, isDate)}
-                    frozen={col.frozen}
-                    alignFrozen={col.frozen ? 'left' : undefined}
-                    style={{ ...col.style, ...columnStyle(col.field) }}
-                    headerStyle={{ whiteSpace: 'normal', wordWrap: 'break-word', lineHeight: '1.2' }}
-                  />
-                );
+                if (col.isStatus) return <Column key={col.field} field={col.field} header={headerContent} sortable filter body={createStatusBody(col.field)} style={{ ...col.style, width: '220px' }} />;
+                return <Column key={col.field} field={col.field} header={headerContent} sortable filter body={createClickableBody(col.field, col.isDate)} frozen={col.frozen} alignFrozen={col.frozen ? 'left' : undefined} style={{ ...col.style, ...columnStyle(col.field) }} />;
               })}
             </DataTable>
           </div>
         </div>
       </main>
 
+      {/* Rename Column Dialog (unchanged) */}
       <Dialog visible={renameDialog} style={{ width: '400px' }} header="Rename Column" modal onHide={() => setRenameDialog(false)} className={darkMode ? 'dark-dialog' : ''}>
         <div className="mt-4 space-y-4">
           <div>
@@ -859,6 +880,7 @@ const TrackerPage = () => {
         </div>
       </Dialog>
 
+      {/* History Overlay (unchanged) */}
       <OverlayPanel ref={op} className={`shadow-2xl rounded-2xl ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`} style={{ maxWidth: '550px' }}>
         <div className="p-4">
           <div className="flex justify-between items-center mb-3 gap-4 flex-wrap">
@@ -897,18 +919,7 @@ const TrackerPage = () => {
                     <tr key={idx} className={selectedHistoryItems.includes(h._id) ? (darkMode ? 'bg-blue-900/30' : 'bg-blue-50') : ''}>
                       {isAdmin && (
                         <td className="p-2">
-                          <input
-                            type="checkbox"
-                            checked={selectedHistoryItems.includes(h._id)}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setSelectedHistoryItems(prev => [...prev, h._id]);
-                              } else {
-                                setSelectedHistoryItems(prev => prev.filter(id => id !== h._id));
-                              }
-                            }}
-                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                          />
+                          <input type="checkbox" checked={selectedHistoryItems.includes(h._id)} onChange={(e) => { if (e.target.checked) { setSelectedHistoryItems(prev => [...prev, h._id]); } else { setSelectedHistoryItems(prev => prev.filter(id => id !== h._id)); } }} className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                         </td>
                       )}
                       <td className="p-2">{h.oldValue ? formatDate(h.oldValue) : '-'}</td>
@@ -928,6 +939,7 @@ const TrackerPage = () => {
         </div>
       </OverlayPanel>
 
+      {/* Entry Form Dialog (unchanged) */}
       <Dialog visible={formDialog} style={{ width: '950px' }} header={isEditing ? 'Edit Record' : 'New Record'} modal footer={dialogFooter} onHide={hideDialog} className={darkMode ? 'dark-dialog' : ''}>
         <TabView className="mt-2">
           <TabPanel header="Basic Details">
@@ -950,14 +962,7 @@ const TrackerPage = () => {
               </div>
               <div className="field md:col-span-2">
                 <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Remark</label>
-                <InputTextarea
-                  value={formData.remark || ''}
-                  onChange={(e) => setFormData({ ...formData, remark: e.target.value })}
-                  rows={3}
-                  autoResize
-                  disabled={!isFieldEditable('remark')}
-                  className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`}
-                />
+                <InputTextarea value={formData.remark || ''} onChange={(e) => setFormData({ ...formData, remark: e.target.value })} rows={3} autoResize disabled={!isFieldEditable('remark')} className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`} />
               </div>
             </div>
           </TabPanel>
@@ -1043,6 +1048,50 @@ const TrackerPage = () => {
             </div>
           </TabPanel>
         </TabView>
+      </Dialog>
+
+      {/* ---------- IMPORT: File Selection Dialog ---------- */}
+      <Dialog visible={importDialog} onHide={() => { setImportDialog(false); setImportFile(null); }} header="Import Excel" modal style={{ width: '450px' }} className={darkMode ? 'dark-dialog' : ''}>
+        <div className="mt-4 space-y-4">
+          <p className="text-sm">Columns expected: <b>CAT NO, Style No., Style Name, Factory FOB, Photoshoot date</b></p>
+          <input type="file" accept=".xlsx" onChange={(e) => setImportFile(e.target.files[0])} className="w-full p-2 border rounded" />
+          <div className="flex justify-end gap-3">
+            <button onClick={() => { setImportDialog(false); setImportFile(null); }} className="px-4 py-2 rounded border">Cancel</button>
+            <button onClick={handleParseFile} disabled={!importFile || importing} className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50">{importing ? 'Reading...' : 'Next'}</button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* ---------- IMPORT: Preview & Confirm Dialog ---------- */}
+      <Dialog visible={showPreview} onHide={() => { setShowPreview(false); setPreviewEntries([]); }} header="Preview Import" modal style={{ width: '95%', maxWidth: '1100px' }} className={darkMode ? 'dark-dialog' : ''}>
+        <div className="mt-4">
+          <div className="flex gap-4 mb-4">
+            <div className={`p-3 rounded-lg border ${darkMode ? 'bg-white/5' : 'bg-blue-50'}`}>
+              <div className="text-sm">Total Rows</div>
+              <div className="text-2xl font-bold">{previewEntries.length}</div>
+            </div>
+            <div className={`p-3 rounded-lg border ${darkMode ? 'bg-white/5' : 'bg-green-50'}`}>
+              <div className="text-sm">Unique Catalogs</div>
+              <div className="text-2xl font-bold">{new Set(previewEntries.map(e => e.catNo).filter(Boolean)).size}</div>
+            </div>
+            <div className={`p-3 rounded-lg border ${darkMode ? 'bg-white/5' : 'bg-purple-50'}`}>
+              <div className="text-sm">Unique Styles</div>
+              <div className="text-2xl font-bold">{new Set(previewEntries.map(e => e.styleNo).filter(Boolean)).size}</div>
+            </div>
+          </div>
+          <p className="mb-3 text-sm text-gray-500">Only rows with a valid <b>Style No.</b> will be imported.</p>
+          <DataTable value={previewEntries} paginator={previewEntries.length > 20} rows={20} scrollable scrollHeight="400px">
+            <Column field="catNo" header="CAT NO" style={{ minWidth: '140px' }} />
+            <Column field="styleNo" header="Style No." style={{ minWidth: '140px' }} />
+            <Column field="styleName" header="Style Name" style={{ minWidth: '200px' }} />
+            <Column field="factoryFOB" header="Factory FOB" body={(row) => row.factoryFOB || '-'} style={{ minWidth: '120px' }} />
+            <Column field="vendorPhotoShootDate" header="Photoshoot date" body={(row) => row.vendorPhotoShootDate || '-'} style={{ minWidth: '140px' }} />
+          </DataTable>
+          <div className="flex justify-end gap-3 mt-4">
+            <button onClick={() => { setShowPreview(false); setPreviewEntries([]); }} className="px-4 py-2 rounded border">Cancel</button>
+            <button onClick={confirmImport} disabled={importing} className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50">{importing ? 'Importing...' : 'Confirm Import'}</button>
+          </div>
+        </div>
       </Dialog>
 
       <AIChat />
