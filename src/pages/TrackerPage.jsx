@@ -27,7 +27,7 @@ import { exportMasterLedger, exportHistoryLog, exportCSV } from '../utils/excelE
 
 const standardFields = [
   '_id', 'createdAt', 'updatedAt', '__v', 'history',
-  'catNo', 'styleNo', 'styleName',           // ← styleName added
+  'catNo', 'styleNo', 'styleName',
   'factoryFOB', 'vendorPhotoShootDate',
   'labdipQualityDeskloomDue', 'labdipPlannedDate', 'labdipPlannedStatus',
   'photoSampleDue', 'photoSamplePlannedDate', 'photoSamplePlannedStatus',
@@ -77,6 +77,9 @@ const TrackerPage = () => {
   const [confirmState, setConfirmState] = useState({ visible: false, message: '', accept: null });
   const [filter, setFilter] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  
+  // ---- NEW: State for catalog filter ----
+  const [selectedCatalog, setSelectedCatalog] = useState(null);
 
   const isAdmin = user?.role === 'admin';
   const isPMA = user?.role === 'pma';
@@ -197,36 +200,74 @@ const TrackerPage = () => {
     loadData();
   }, [loadData]);
 
+  // ---- NEW: Catalog options with latest catalog on top ----
+  const catalogOptions = useMemo(() => {
+    const catMap = new Map();
+    data.forEach(row => {
+      if (!row.catNo) return;
+      const existing = catMap.get(row.catNo);
+      const createdAt = row.createdAt ? new Date(row.createdAt).getTime() : 0;
+      if (!existing || createdAt > existing.latest) {
+        catMap.set(row.catNo, { catNo: row.catNo, latest: createdAt });
+      }
+    });
+    return Array.from(catMap.values())
+      .sort((a, b) => b.latest - a.latest)  // latest entry wala catalog upar
+      .map(item => ({ label: item.catNo, value: item.catNo }));
+  }, [data]);
+
+  // ---- UPDATED filteredData: includes catalog filter & latest first ----
   const filteredData = useMemo(() => {
-    if (!filter || filter === 'all') return data;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    switch (filter) {
-      case 'pending-gpt':
-        return data.filter(item => item.plannedGPTStatus === 'Pending');
-      case 'pending-fpt':
-        return data.filter(item => item.plannedFPTStatus === 'Pending');
-      case 'approved':
-        return data.filter(item =>
-          item.labdipPlannedStatus === 'Approved' ||
-          item.photoSamplePlannedStatus === 'Approved' ||
-          item.plannedFPTStatus === 'Approved' ||
-          item.plannedGPTStatus === 'Approved' ||
-          item.gsmColorLotsPlannedStatus === 'Approved'
-        );
-      case 'delayed':
-        return data.filter(item => {
-          const dueDate = new Date(item.labdipQualityDeskloomDue);
-          return dueDate < today && item.labdipPlannedStatus !== 'Approved';
-        });
-      case 'hold':
-        return data.filter(item => item.pendingStatus === 'Hold');
-      case 'urgent':
-        return data.filter(item => item.priority === 'Urgent');
-      default:
-        return data;
+    let result = data;
+
+    if (filter && filter !== 'all') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      switch (filter) {
+        case 'pending-gpt':
+          result = data.filter(item => item.plannedGPTStatus === 'Pending');
+          break;
+        case 'pending-fpt':
+          result = data.filter(item => item.plannedFPTStatus === 'Pending');
+          break;
+        case 'approved':
+          result = data.filter(item =>
+            item.labdipPlannedStatus === 'Approved' ||
+            item.photoSamplePlannedStatus === 'Approved' ||
+            item.plannedFPTStatus === 'Approved' ||
+            item.plannedGPTStatus === 'Approved' ||
+            item.gsmColorLotsPlannedStatus === 'Approved'
+          );
+          break;
+        case 'delayed':
+          result = data.filter(item => {
+            const dueDate = new Date(item.labdipQualityDeskloomDue);
+            return dueDate < today && item.labdipPlannedStatus !== 'Approved';
+          });
+          break;
+        case 'hold':
+          result = data.filter(item => item.pendingStatus === 'Hold');
+          break;
+        case 'urgent':
+          result = data.filter(item => item.priority === 'Urgent');
+          break;
+        default:
+          result = data;
+      }
     }
-  }, [data, filter]);
+
+    // Apply catalog filter
+    if (selectedCatalog) {
+      result = result.filter(item => item.catNo === selectedCatalog);
+    }
+
+    // Sort by createdAt descending – latest entries first
+    return [...result].sort((a, b) => {
+      const dateA = new Date(a.createdAt || 0);
+      const dateB = new Date(b.createdAt || 0);
+      return dateB - dateA;
+    });
+  }, [data, filter, selectedCatalog]);
 
   const clearFilter = () => {
     navigate('/tracker');
@@ -238,7 +279,7 @@ const TrackerPage = () => {
   const openNew = useCallback(() => {
     setIsEditing(false);
     const initialData = {
-      catNo: '', styleNo: '', styleName: '',   // ← styleName added
+      catNo: '', styleNo: '', styleName: '',
       factoryFOB: null, vendorPhotoShootDate: null,
       labdipQualityDeskloomDue: null, labdipPlannedDate: null, labdipPlannedStatus: 'Pending',
       photoSampleDue: null, photoSamplePlannedDate: null, photoSamplePlannedStatus: 'Pending',
@@ -522,7 +563,7 @@ const TrackerPage = () => {
     ...(isAdmin ? [{ field: 'selection', header: '', body: null, frozen: true, style: { width: '50px' } }] : []),
     { field: 'catNo', header: 'CAT NO', frozen: true, style: { width: '160px' } },
     { field: 'styleNo', header: 'Style No.', frozen: true, style: { width: '180px' } },
-    { field: 'styleName', header: 'Style Name', frozen: true, style: { width: '180px' } },  // ← NEW
+    { field: 'styleName', header: 'Style Name', frozen: true, style: { width: '180px' } },
     { field: 'factoryFOB', header: 'Factory FOB', isDate: true, style: { width: '110px' } },
     { field: 'vendorPhotoShootDate', header: 'PhotoShoot Date', isDate: true, style: { width: '110px' } },
     { field: 'labdipQualityDeskloomDue', header: 'Labdip (Due Date)', isDate: true, style: { width: '110px' } },
@@ -542,7 +583,6 @@ const TrackerPage = () => {
     { field: 'gsmColorLotsPlanned', header: 'Gsm/Color (Planned Date)', isDate: true, style: { width: '110px' } },
     { field: 'gsmColorLotsPlannedStatus', header: 'Gsm/Color (Status)', isStatus: true },
     { field: 'remark', header: 'Remark' },
-    
     { field: 'actions', header: 'Edit', frozen: true, style: { width: '80px' } }
   ], [isAdmin, customCols]);
 
@@ -575,9 +615,6 @@ const TrackerPage = () => {
       )}
       {isAdmin && (
         <div className="flex gap-2">
-          <button onClick={() => setRenameDialog(true)} disabled={customCols.length === 0} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border disabled:opacity-50 ${darkMode ? 'text-indigo-300 border-indigo-500/30 hover:bg-indigo-500/10' : 'text-slate-700 bg-white border-gray-200 hover:bg-gray-50'}`}>
-            <Edit3 size={16} /> Rename Column
-          </button>
           <button onClick={confirmDelete} disabled={selectedRows.length === 0} className="flex items-center gap-2 bg-red-500 hover:bg-red-600 px-5 py-2 rounded-xl text-sm font-semibold shadow-sm transition-all disabled:opacity-50 text-white ml-2">
             <Trash2 size={16} /> Delete
           </button>
@@ -586,8 +623,19 @@ const TrackerPage = () => {
     </div>
   ), [isAdmin, isPMA, openNew, customCols.length, selectedRows.length, confirmDelete, darkMode, hasData]);
 
+  // ---- UPDATED toolbarRight: includes Catalog dropdown ----
   const toolbarRight = useMemo(() => (
     <div className="flex gap-3 items-center flex-wrap">
+      {/* Catalog filter dropdown */}
+      <Dropdown
+        value={selectedCatalog}
+        options={catalogOptions}
+        onChange={(e) => setSelectedCatalog(e.value)}
+        placeholder="Select Catalog"
+        showClear
+        className="w-[180px]"
+      />
+
       <div className="flex items-center gap-2">
         <Checkbox inputId="exportSelected" checked={exportSelectedOnly} onChange={e => setExportSelectedOnly(e.checked)} disabled={selectedRows.length === 0} />
         <label htmlFor="exportSelected" className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Export Selected</label>
@@ -615,7 +663,18 @@ const TrackerPage = () => {
         />
       )}
     </div>
-  ), [exportSelectedOnly, selectedRows, handleExportMasterLedger, handleExportHistoryLog, handleExportCSV, isAdmin, allColumnDefs, darkMode]);
+  ), [
+    exportSelectedOnly,
+    selectedRows,
+    handleExportMasterLedger,
+    handleExportHistoryLog,
+    handleExportCSV,
+    isAdmin,
+    allColumnDefs,
+    darkMode,
+    selectedCatalog,
+    catalogOptions
+  ]);
 
   const dialogFooter = useMemo(() => (
     <div className="flex justify-end gap-3 mt-4">
@@ -881,7 +940,6 @@ const TrackerPage = () => {
                 <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Style No. *</label>
                 <InputText value={formData.styleNo || ''} onChange={(e) => setFormData({ ...formData, styleNo: e.target.value })} disabled={!isFieldEditable('styleNo')} className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`} />
               </div>
-              {/* NEW Style Name input */}
               <div className="field">
                 <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Style Name</label>
                 <InputText value={formData.styleName || ''} onChange={(e) => setFormData({ ...formData, styleName: e.target.value })} disabled={!isFieldEditable('styleName')} className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`} />
