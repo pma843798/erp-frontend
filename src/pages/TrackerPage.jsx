@@ -22,7 +22,7 @@ import * as XLSX from 'xlsx';
 
 import {
   LayoutDashboard, LogOut, Plus, Trash2, Download, Printer,
-  Sun, Moon, Columns, Edit3, Users, Database, Grid, FilterX, Menu, Upload
+  Sun, Moon, Columns, Edit3, Users, Database, Grid, FilterX, Menu, Upload, Layers, Search
 } from 'lucide-react';
 import { exportMasterLedger, exportHistoryLog, exportCSV } from '../utils/excelExport';
 
@@ -52,55 +52,78 @@ const statusOptions = [
   { label: 'REJECT', value: 'Rejected' }
 ];
 
+// ---------- BULK UPDATE FIELD LISTS ----------
+// Planned Date fields (Vendor)
+const plannedDateFields = [
+  'labdipPlannedDate',
+  'photoSamplePlannedDate',
+  'plannedFPT',
+  'plannedGPT',
+  'gsmColorLotsPlanned',
+  'fabInHousePlannedDate'
+];
+
+// Status fields (PMA & Admin)
+const statusFields = [
+  'labdipPlannedStatus',
+  'photoSamplePlannedStatus',
+  'plannedFPTStatus',
+  'plannedGPTStatus',
+  'gsmColorLotsPlannedStatus'
+];
+
+// All Date fields (Admin) – includes due dates, FOB, PhotoShoot
+const allDateFields = [
+  'factoryFOB',
+  'vendorPhotoShootDate',
+  'labdipQualityDeskloomDue',
+  'labdipPlannedDate',
+  'photoSampleDue',
+  'photoSamplePlannedDate',
+  'fabInHousePlannedDate',
+  'fptDueDate',
+  'plannedFPT',
+  'gptDueDate',
+  'plannedGPT',
+  'gsmColorLotsDue',
+  'gsmColorLotsPlanned'
+];
+
+// Text field (Remark) for Admin
+const textFields = ['remark'];
+
+const makeLabel = (field) => field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
+
 // ---------- FIXED DATE PARSER ----------
 const parseExcelDate = (val) => {
   if (val === undefined || val === null || val === '') return null;
-
-  // 1. Excel serial number (number)
   if (typeof val === 'number') {
     const jsDate = new Date((val - 25569) * 86400 * 1000);
-    if (!isNaN(jsDate.getTime())) {
-      return jsDate.toISOString().split('T')[0]; // yyyy-mm-dd
-    }
+    if (!isNaN(jsDate.getTime())) return jsDate.toISOString().split('T')[0];
     return null;
   }
-
   const str = String(val).trim();
   if (str === '') return null;
-
-  // 2. Numeric string (Excel serial)
   if (/^\d+$/.test(str)) {
     const num = parseInt(str, 10);
     const jsDate = new Date((num - 25569) * 86400 * 1000);
-    if (!isNaN(jsDate.getTime())) {
-      return jsDate.toISOString().split('T')[0];
-    }
-    // fall through to other parsers if not a valid serial
+    if (!isNaN(jsDate.getTime())) return jsDate.toISOString().split('T')[0];
   }
-
-  // 3. dd-MMM-yy (e.g., 10-Sep-26)
   const ddMmmYyRegex = /^(\d{1,2})[-/ ]([A-Za-z]{3})[-/ ](\d{2})$/;
   const match = str.match(ddMmmYyRegex);
   if (match) {
     const day = parseInt(match[1], 10);
     const monthStr = match[2].toLowerCase();
-    const year = 2000 + parseInt(match[3], 10);   // assume 20xx
+    const year = 2000 + parseInt(match[3], 10);
     const months = { jan:0, feb:1, mar:2, apr:3, may:4, jun:5, jul:6, aug:7, sep:8, oct:9, nov:10, dec:11 };
     const month = months[monthStr];
     if (month !== undefined && day > 0) {
       const date = new Date(year, month, day);
-      if (!isNaN(date.getTime())) {
-        return `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-      }
+      if (!isNaN(date.getTime())) return `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
     }
   }
-
-  // 4. Standard JS parsing (fallback)
   const d = new Date(str);
-  if (!isNaN(d.getTime())) {
-    return d.toISOString().split('T')[0];
-  }
-
+  if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
   return null;
 };
 // -------------------------------------
@@ -121,11 +144,9 @@ const TrackerPage = () => {
   const [selectedHistoryItems, setSelectedHistoryItems] = useState([]);
 
   const [customCols, setCustomCols] = useState([]);
-
   const [renameDialog, setRenameDialog] = useState(false);
   const [colToRename, setColToRename] = useState('');
   const [renamedColName, setRenamedColName] = useState('');
-
   const [hiddenColumns, setHiddenColumns] = useState([]);
   const [exportSelectedOnly, setExportSelectedOnly] = useState(false);
   const [confirmState, setConfirmState] = useState({ visible: false, message: '', accept: null });
@@ -133,25 +154,24 @@ const TrackerPage = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedCatalog, setSelectedCatalog] = useState(null);
 
-  // Import states
+  const [globalFilter, setGlobalFilter] = useState('');
+  const [bulkDialogVisible, setBulkDialogVisible] = useState(false);
+  const [bulkUpdateField, setBulkUpdateField] = useState('');
+  const [bulkUpdateValue, setBulkUpdateValue] = useState('');
+
   const [importDialog, setImportDialog] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importing, setImporting] = useState(false);
   const [previewEntries, setPreviewEntries] = useState([]);
   const [showPreview, setShowPreview] = useState(false);
 
-  const isAdmin = user?.role === 'admin';
-  const isPMA = user?.role === 'pma';
-  const isVendor = user?.role === 'vendor';
+  // Role check (case-insensitive)
+  const userRole = user?.role?.toLowerCase();
+  const isAdmin = userRole === 'admin';
+  const isPMA = userRole === 'pma';
+  const isVendor = userRole === 'vendor';
 
-  const redFields = [
-    'labdipPlannedDate', 'labdipPlannedStatus',
-    'photoSamplePlannedDate', 'photoSamplePlannedStatus',
-    'plannedFPT', 'plannedFPTStatus',
-    'plannedGPT', 'plannedGPTStatus',
-    'gsmColorLotsPlanned', 'gsmColorLotsPlannedStatus',
-    'fabInHousePlannedDate'
-  ];
+  const redFields = plannedDateFields;
 
   const [darkMode, setDarkMode] = useState(() => {
     const savedTheme = localStorage.getItem('theme');
@@ -178,9 +198,7 @@ const TrackerPage = () => {
   }, []);
 
   const saveEntry = useCallback(async (payload, isEditingEntry, id) => {
-    if (isEditingEntry && id) {
-      return api.put(`/tracker/${id}`, payload);
-    }
+    if (isEditingEntry && id) return api.put(`/tracker/${id}`, payload);
     return api.post('/tracker', payload);
   }, []);
 
@@ -248,8 +266,8 @@ const TrackerPage = () => {
   }, [fetchData]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (data.length === 0) loadData();
+  }, [loadData, data.length]);
 
   const catalogOptions = useMemo(() => {
     const catMap = new Map();
@@ -303,20 +321,9 @@ const TrackerPage = () => {
           result = data;
       }
     }
-    if (selectedCatalog) {
-      result = result.filter(item => item.catNo === selectedCatalog);
-    }
-    return [...result].sort((a, b) => {
-      const dateA = new Date(a.createdAt || 0);
-      const dateB = new Date(b.createdAt || 0);
-      return dateB - dateA;
-    });
+    if (selectedCatalog) result = result.filter(item => item.catNo === selectedCatalog);
+    return [...result].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   }, [data, filter, selectedCatalog]);
-
-  const clearFilter = () => {
-    navigate('/tracker');
-    setFilter(null);
-  };
 
   const hasData = filteredData.length > 0;
 
@@ -368,6 +375,64 @@ const TrackerPage = () => {
       toast.current.show({ severity: 'error', summary: 'Error', detail: err.response?.data?.message || 'Failed to save', life: 3000 });
     }
   }, [formData, isEditing, isVendor, cleanData, saveEntry, loadData]);
+
+  // ---------- BULK UPDATE : Role based options ----------
+  const bulkFieldOptions = useMemo(() => {
+    if (isAdmin) {
+      const dateOpts = allDateFields.map(f => ({ label: makeLabel(f), value: f }));
+      const statusOpts = statusFields.map(f => ({ label: makeLabel(f), value: f }));
+      const textOpts = textFields.map(f => ({ label: makeLabel(f), value: f }));
+      const all = [...dateOpts, ...statusOpts, ...textOpts];
+      console.log('Admin bulk options:', all);
+      return all;
+    }
+    if (isPMA) {
+      const opts = statusFields.map(f => ({ label: makeLabel(f), value: f }));
+      console.log('PMA bulk options:', opts);
+      return opts;
+    }
+    if (isVendor) {
+      const opts = plannedDateFields.map(f => ({ label: makeLabel(f), value: f }));
+      console.log('Vendor bulk options:', opts);
+      return opts;
+    }
+    console.log('No role matched, empty options');
+    return [];
+  }, [isAdmin, isPMA, isVendor]);
+
+  // Helper to determine input type
+  const getFieldType = (field) => {
+    if (statusFields.includes(field)) return 'status';
+    if (allDateFields.includes(field) || plannedDateFields.includes(field)) return 'date';
+    if (textFields.includes(field)) return 'text';
+    if (field.toLowerCase().includes('status')) return 'status';
+    if (field.toLowerCase().includes('date') || field.toLowerCase().includes('due') || field.toLowerCase().includes('fob') || field.toLowerCase().includes('photo')) return 'date';
+    return 'text';
+  };
+
+  const handleBulkUpdateSubmit = async () => {
+    if (!bulkUpdateField || !bulkUpdateValue) {
+      toast.current.show({ severity: 'warn', summary: 'Validation', detail: 'Please select both field and value.', life: 3000 });
+      return;
+    }
+    setLoading(true);
+    try {
+      const promises = selectedRows.map(row => 
+        api.put(`/tracker/${row._id}`, { [bulkUpdateField]: bulkUpdateValue })
+      );
+      await Promise.all(promises);
+      toast.current.show({ severity: 'success', summary: 'Bulk Updated', detail: `Successfully updated ${selectedRows.length} records`, life: 2000 });
+      setBulkDialogVisible(false);
+      setSelectedRows([]);
+      setBulkUpdateField('');
+      setBulkUpdateValue('');
+      loadData();
+    } catch (err) {
+      toast.current.show({ severity: 'error', summary: 'Error', detail: 'Bulk update failed.', life: 3000 });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleDeleteSelected = useCallback(async () => {
     if (selectedRows.length === 0) return;
@@ -423,13 +488,11 @@ const TrackerPage = () => {
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
-
       if (jsonData.length === 0) {
         toast.current?.show({ severity: 'warn', summary: 'Empty file', detail: 'No rows found.', life: 3000 });
         setImporting(false);
         return;
       }
-
       const headerMap = {
         'CAT NO': 'catNo',
         'Style No.': 'styleNo',
@@ -437,7 +500,6 @@ const TrackerPage = () => {
         'Factory FOB': 'factoryFOB',
         'Photoshoot date': 'vendorPhotoShootDate',
       };
-
       const entries = jsonData.map(row => {
         const entry = {
           catNo: '',
@@ -455,7 +517,6 @@ const TrackerPage = () => {
           buyerApproval: 'Pending',
           priority: 'Medium',
         };
-
         Object.keys(row).forEach(excelHeader => {
           const field = headerMap[excelHeader];
           if (field) {
@@ -468,10 +529,8 @@ const TrackerPage = () => {
             entry[excelHeader] = row[excelHeader];
           }
         });
-
         return entry;
       });
-
       setPreviewEntries(entries);
       setImportDialog(false);
       setShowPreview(true);
@@ -713,7 +772,7 @@ const TrackerPage = () => {
     { field: 'gsmColorLotsPlannedStatus', header: 'Gsm/Color (Status)', isStatus: true },
     { field: 'remark', header: 'Remark' },
     { field: 'actions', header: 'Edit', frozen: true, style: { width: '80px' } }
-  ], [isAdmin, customCols]);
+  ], [isAdmin]);
 
   const visibleColumns = useMemo(() => allColumnDefs.filter(col => !hiddenColumns.includes(col.field)), [allColumnDefs, hiddenColumns]);
 
@@ -730,13 +789,23 @@ const TrackerPage = () => {
     );
   };
 
+  // -------- TOOLBAR LEFT (with Bulk Update) --------
   const toolbarLeft = useMemo(() => (
-    <div className="flex gap-3 items-center">
+    <div className="flex gap-3 items-center flex-wrap">
       {hasData && (
         <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
           <Menu size={20} />
         </button>
       )}
+      <span className="relative flex items-center">
+        <Search size={16} className={`absolute left-3 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+        <InputText 
+          value={globalFilter} 
+          onChange={(e) => setGlobalFilter(e.target.value)} 
+          placeholder="Search items..." 
+          className={`pl-9 pr-3 py-2 rounded-xl text-sm border w-[180px] md:w-[220px] transition-all ${darkMode ? 'bg-slate-800 border-slate-700 text-white focus:border-cyan-500' : 'bg-white border-gray-300 focus:border-blue-500'}`}
+        />
+      </span>
       {(isAdmin || isPMA) && (
         <button onClick={openNew} className="flex items-center gap-2 bg-[#0080ff] hover:bg-blue-600 px-5 py-2 rounded-xl font-semibold shadow-sm transition-all text-white text-sm">
           <Plus size={16} /> New Entry
@@ -747,19 +816,25 @@ const TrackerPage = () => {
           <Upload size={16} /> Import Excel
         </button>
       )}
+      {/* --- BULK UPDATE BUTTON (Sabko dikhega, bas rows select honi chahiye) --- */}
+      {selectedRows.length > 0 && (
+        <button onClick={() => setBulkDialogVisible(true)} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 px-5 py-2 rounded-xl text-sm font-semibold shadow-sm transition-all text-white">
+          <Layers size={16} /> Bulk Update ({selectedRows.length})
+        </button>
+      )}
+      {/* --- DELETE BUTTON (Sirf Admin) --- */}
       {isAdmin && (
-        <div className="flex gap-2">
-          <button onClick={confirmDelete} disabled={selectedRows.length === 0} className="flex items-center gap-2 bg-red-500 hover:bg-red-600 px-5 py-2 rounded-xl text-sm font-semibold shadow-sm transition-all disabled:opacity-50 text-white ml-2">
-            <Trash2 size={16} /> Delete
-          </button>
-        </div>
+        <button onClick={confirmDelete} disabled={selectedRows.length === 0} className="flex items-center gap-2 bg-red-500 hover:bg-red-600 px-5 py-2 rounded-xl text-sm font-semibold shadow-sm transition-all disabled:opacity-50 text-white">
+          <Trash2 size={16} /> Delete
+        </button>
       )}
     </div>
-  ), [isAdmin, isPMA, openNew, selectedRows.length, confirmDelete, darkMode, hasData]);
+  ), [isAdmin, isPMA, openNew, selectedRows, confirmDelete, darkMode, hasData, globalFilter]);
 
+  // -------- TOOLBAR RIGHT (unchanged) --------
   const toolbarRight = useMemo(() => (
     <div className="flex gap-3 items-center flex-wrap">
-      <Dropdown value={selectedCatalog} options={catalogOptions} onChange={(e) => setSelectedCatalog(e.value)} placeholder="Select Catalog" showClear className="w-[180px]" />
+      <Dropdown value={selectedCatalog} options={catalogOptions} onChange={(e) => setSelectedCatalog(e.value)} placeholder="Select Catalog" showClear className="w-[160px]" />
       <div className="flex items-center gap-2">
         <Checkbox inputId="exportSelected" checked={exportSelectedOnly} onChange={e => setExportSelectedOnly(e.checked)} disabled={selectedRows.length === 0} />
         <label htmlFor="exportSelected" className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Export Selected</label>
@@ -769,10 +844,17 @@ const TrackerPage = () => {
       <button onClick={handleExportCSV} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}><Download size={16} /> CSV</button>
       <button onClick={() => window.print()} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}><Printer size={16} /> Print</button>
       {isAdmin && (
-        <MultiSelect value={hiddenColumns} options={allColumnDefs.filter(col => col.field !== 'selection' && col.field !== 'actions').map(col => ({ label: col.header, value: col.field }))} onChange={(e) => setHiddenColumns(e.value)} placeholder="Hide Columns" className="max-w-[200px]" display="chip" />
+        <MultiSelect value={hiddenColumns} options={allColumnDefs.filter(col => col.field !== 'selection' && col.field !== 'actions').map(col => ({ label: col.header, value: col.field }))} onChange={(e) => setHiddenColumns(e.value)} placeholder="Hide Columns" className="max-w-[160px]" display="chip" />
       )}
+      <button 
+        onClick={() => setDarkMode(!darkMode)} 
+        className={`p-2.5 rounded-xl transition-all border ${darkMode ? 'bg-slate-800 border-slate-700 text-yellow-400 hover:bg-slate-700' : 'bg-white border-gray-200 text-slate-700 hover:bg-gray-50 shadow-sm'}`}
+        title="Toggle Light/Dark Theme"
+      >
+        {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+      </button>
     </div>
-  ), [exportSelectedOnly, selectedRows, handleExportMasterLedger, handleExportHistoryLog, handleExportCSV, isAdmin, allColumnDefs, darkMode, selectedCatalog, catalogOptions]);
+  ), [exportSelectedOnly, selectedRows, handleExportMasterLedger, handleExportHistoryLog, handleExportCSV, isAdmin, allColumnDefs, darkMode, selectedCatalog, catalogOptions, hiddenColumns]);
 
   const dialogFooter = useMemo(() => (
     <div className="flex justify-end gap-3 mt-4">
@@ -852,7 +934,19 @@ const TrackerPage = () => {
         </div>
         <div className="flex-1 px-2 md:px-4 pb-2 overflow-hidden flex flex-col" style={{ minHeight: 0 }}>
           <div className={`transition-all rounded-2xl shadow-sm overflow-hidden flex-1 flex flex-col border ${darkMode ? 'bg-[#1e293b] border-gray-800' : 'bg-white border-gray-100'}`}>
-            <DataTable value={filteredData} selection={selectedRows} onSelectionChange={(e) => setSelectedRows(e.value)} paginator rows={15} rowsPerPageOptions={[15, 30, 50]} filterDisplay="row" scrollable scrollHeight="flex" showGridlines resizableColumns columnResizeMode="expand" loading={loading} emptyMessage="No entries found." className={`p-datatable-sm p-datatable-gridlines whitespace-nowrap ${darkMode ? 'custom-dark-table' : ''}`} dataKey="_id" tableStyle={{ minWidth: '120rem' }} style={{ height: '100%' }} rowClassName={rowClassName}>
+            <DataTable 
+              value={filteredData} 
+              selection={selectedRows} 
+              onSelectionChange={(e) => setSelectedRows(e.value)} 
+              paginator rows={15} rowsPerPageOptions={[15, 30, 50]} 
+              filterDisplay="row" scrollable scrollHeight="flex" 
+              showGridlines resizableColumns columnResizeMode="expand" 
+              loading={loading} emptyMessage="No entries found." 
+              className={`p-datatable-sm p-datatable-gridlines whitespace-nowrap ${darkMode ? 'custom-dark-table' : ''}`} 
+              dataKey="_id" tableStyle={{ minWidth: '120rem' }} style={{ height: '100%' }} 
+              rowClassName={rowClassName}
+              globalFilter={globalFilter}
+            >
               {visibleColumns.map(col => {
                 if (col.field === 'selection') return <Column key="sel" selectionMode="multiple" frozen alignFrozen="left" style={col.style} />;
                 if (col.field === 'actions') return <Column key="act" body={actionBodyTemplate} header="Edit" frozen alignFrozen="right" style={col.style} />;
@@ -865,7 +959,77 @@ const TrackerPage = () => {
         </div>
       </main>
 
-      {/* Rename Column Dialog (unchanged) */}
+      {/* ========================================================== */}
+      {/* ======== BULK UPDATE DIALOG (Dynamic Input) =============== */}
+      {/* ========================================================== */}
+      <Dialog visible={bulkDialogVisible} style={{ width: '450px' }} header="Bulk Update" modal onHide={() => { setBulkDialogVisible(false); setBulkUpdateField(''); setBulkUpdateValue(''); }} className={darkMode ? 'dark-dialog' : ''}>
+        <div className="mt-4 space-y-4">
+          <p className="text-sm opacity-80">You have selected <b>{selectedRows.length}</b> records.</p>
+          {bulkFieldOptions.length === 0 ? (
+            <div className="text-red-500 text-sm">No fields available for bulk update for your role.</div>
+          ) : (
+            <>
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Select Field to Update</label>
+                <Dropdown 
+                  value={bulkUpdateField} 
+                  options={bulkFieldOptions} 
+                  onChange={(e) => { 
+                    setBulkUpdateField(e.value); 
+                    setBulkUpdateValue(''); 
+                  }} 
+                  placeholder="Choose a field" 
+                  className="w-full" 
+                />
+              </div>
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>
+                  {getFieldType(bulkUpdateField) === 'date' ? 'Select Date' : 
+                   getFieldType(bulkUpdateField) === 'status' ? 'Select Status' : 'Enter Value'}
+                </label>
+                {getFieldType(bulkUpdateField) === 'date' ? (
+                  <Calendar 
+                    value={bulkUpdateValue ? new Date(bulkUpdateValue) : null} 
+                    onChange={(e) => setBulkUpdateValue(dateToStr(e.value))} 
+                    dateFormat="dd/mm/yy" 
+                    showIcon 
+                    className="w-full" 
+                    inputClassName={`p-2 text-sm rounded-lg w-full ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`}
+                    placeholder="Pick a date"
+                  />
+                ) : getFieldType(bulkUpdateField) === 'status' ? (
+                  <Dropdown 
+                    value={bulkUpdateValue || 'Pending'} 
+                    options={statusOptions} 
+                    onChange={(e) => setBulkUpdateValue(e.value)} 
+                    placeholder="Choose status" 
+                    className="w-full" 
+                  />
+                ) : (
+                  <InputText 
+                    value={bulkUpdateValue} 
+                    onChange={(e) => setBulkUpdateValue(e.target.value)} 
+                    placeholder="Enter value" 
+                    className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`}
+                  />
+                )}
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => { setBulkDialogVisible(false); setBulkUpdateField(''); setBulkUpdateValue(''); }} className="w-1/2 border py-2.5 rounded-xl font-bold transition-all hover:bg-gray-100 dark:hover:bg-slate-800">Cancel</button>
+                <button 
+                  onClick={handleBulkUpdateSubmit} 
+                  disabled={!bulkUpdateField || !bulkUpdateValue || bulkFieldOptions.length === 0} 
+                  className="w-1/2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white py-2.5 rounded-xl font-bold shadow-lg transition-all"
+                >
+                  Apply Changes
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </Dialog>
+
+      {/* Rename Column Dialog */}
       <Dialog visible={renameDialog} style={{ width: '400px' }} header="Rename Column" modal onHide={() => setRenameDialog(false)} className={darkMode ? 'dark-dialog' : ''}>
         <div className="mt-4 space-y-4">
           <div>
@@ -880,7 +1044,7 @@ const TrackerPage = () => {
         </div>
       </Dialog>
 
-      {/* History Overlay (unchanged) */}
+      {/* History Overlay */}
       <OverlayPanel ref={op} className={`shadow-2xl rounded-2xl ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`} style={{ maxWidth: '550px' }}>
         <div className="p-4">
           <div className="flex justify-between items-center mb-3 gap-4 flex-wrap">
@@ -939,7 +1103,7 @@ const TrackerPage = () => {
         </div>
       </OverlayPanel>
 
-      {/* Entry Form Dialog (unchanged) */}
+      {/* Entry Form Dialog */}
       <Dialog visible={formDialog} style={{ width: '950px' }} header={isEditing ? 'Edit Record' : 'New Record'} modal footer={dialogFooter} onHide={hideDialog} className={darkMode ? 'dark-dialog' : ''}>
         <TabView className="mt-2">
           <TabPanel header="Basic Details">
@@ -1050,7 +1214,7 @@ const TrackerPage = () => {
         </TabView>
       </Dialog>
 
-      {/* ---------- IMPORT: File Selection Dialog ---------- */}
+      {/* Import Dialogs */}
       <Dialog visible={importDialog} onHide={() => { setImportDialog(false); setImportFile(null); }} header="Import Excel" modal style={{ width: '450px' }} className={darkMode ? 'dark-dialog' : ''}>
         <div className="mt-4 space-y-4">
           <p className="text-sm">Columns expected: <b>CAT NO, Style No., Style Name, Factory FOB, Photoshoot date</b></p>
@@ -1062,7 +1226,6 @@ const TrackerPage = () => {
         </div>
       </Dialog>
 
-      {/* ---------- IMPORT: Preview & Confirm Dialog ---------- */}
       <Dialog visible={showPreview} onHide={() => { setShowPreview(false); setPreviewEntries([]); }} header="Preview Import" modal style={{ width: '95%', maxWidth: '1100px' }} className={darkMode ? 'dark-dialog' : ''}>
         <div className="mt-4">
           <div className="flex gap-4 mb-4">
