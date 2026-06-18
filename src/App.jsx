@@ -19,6 +19,8 @@ function App() {
           <Route path="/users" element={<ProtectedRoute adminOnly><UserManagement /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/dashboard" />} />
         </Routes>
+        <Analytics />
+        <SpeedInsights />
       </BrowserRouter>
     </AuthProvider>
   );
