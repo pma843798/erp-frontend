@@ -1,6 +1,7 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
 /* Force grid lines for PrimeReact DataTable */
 .p-datatable .p-datatable-tbody > tr > td,
 .p-datatable .p-datatable-thead > tr > th {
@@ -11,7 +12,6 @@
   border-color: #334155 !important;
 }
 
-/* Even row background for better readability */
 .p-datatable .p-datatable-tbody > tr:nth-child(even) {
   background-color: #f8fafc;
 }
@@ -19,7 +19,6 @@
   background-color: #1e293b;
 }
 
-/* Form field borders and spacing */
 .field input,
 .field .p-calendar,
 .field .p-dropdown {
@@ -44,7 +43,17 @@
   box-shadow: 0 0 0 2px rgba(0, 128, 255, 0.2);
 }
 
-/* Calendar input inside dialog */
 .p-calendar .p-inputtext {
   border-radius: 0.5rem;
 }
+
+
+.p-datatable .p-frozen-column {
+  z-index: 30 !important;
+  opacity: 1 !important;
+  background-color: #ffffff !important; 
+}
+
+.dark .p-datatable .p-frozen-column {
+  background-color: #0f172a !important; 
+} 

@@ -46,15 +46,13 @@ const standardFields = [
 
 const ignoredColumns = ['LABDIPAPPROVEDBY', 'LABDIPAPPROVEDDATE'];
 
-// ---------- UPDATED STATUS OPTIONS (Not Applicable added) ----------
 const statusOptions = [
   { label: 'APPROVE', value: 'Approved' },
   { label: 'PENDING', value: 'Pending' },
   { label: 'REJECT', value: 'Rejected' },
-  { label: 'NOT APPLICABLE', value: 'Not Applicable' }   // NEW
+  { label: 'NOT APPLICABLE', value: 'Not Applicable' }
 ];
 
-// ---------- BULK UPDATE FIELD LISTS ----------
 const plannedDateFields = [
   'labdipPlannedDate',
   'photoSamplePlannedDate',
@@ -92,7 +90,6 @@ const textFields = ['remark'];
 
 const makeLabel = (field) => field.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
 
-// ---------- FIXED DATE PARSER ----------
 const parseExcelDate = (val) => {
   if (val === undefined || val === null || val === '') return null;
   if (typeof val === 'number') {
@@ -174,8 +171,15 @@ const TrackerPage = () => {
     return savedTheme ? savedTheme === 'dark' : false;
   });
 
-  useEffect(() => {
+ useEffect(() => {
     localStorage.setItem('theme', darkMode ? 'dark' : 'light');
+    
+
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
   }, [darkMode]);
 
   const [formDialog, setFormDialog] = useState(false);
@@ -634,32 +638,37 @@ const TrackerPage = () => {
     });
   }, [currentEntryId, cellField, clearHistory, loadData]);
 
-  // ---------- ENHANCED STATUS BADGE (with Not Applicable styling) ----------
   const getStatusBadgeStyles = useCallback((status) => {
     const s = status || 'Pending';
-    if (s === 'Approved') 
-      return darkMode 
-        ? 'bg-green-500/20 text-green-400 border-green-500/40 shadow-[0_2px_6px_rgba(34,197,94,0.3)]' 
-        : 'bg-green-100 text-green-800 border-green-300 shadow-[0_2px_6px_rgba(34,197,94,0.2)]';
-    if (s === 'Rejected') 
-      return darkMode 
-        ? 'bg-red-500/20 text-red-400 border-red-500/40 shadow-[0_2px_6px_rgba(239,68,68,0.3)]' 
-        : 'bg-red-100 text-red-800 border-red-300 shadow-[0_2px_6px_rgba(239,68,68,0.2)]';
-    if (s === 'Not Applicable')   // NEW
-      return darkMode 
-        ? 'bg-slate-500/20 text-slate-300 border-slate-500/40 shadow-[0_2px_6px_rgba(100,116,139,0.3)]' 
-        : 'bg-slate-100 text-slate-700 border-slate-300 shadow-[0_2px_6px_rgba(100,116,139,0.2)]';
-    // Pending (default)
-    return darkMode 
-      ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/40 shadow-[0_2px_6px_rgba(234,179,8,0.3)]' 
-      : 'bg-yellow-100 text-yellow-800 border-yellow-300 shadow-[0_2px_6px_rgba(234,179,8,0.2)]';
+    let base = '';
+    if (s === 'Approved') base = 'border-green-400/50 shadow-[0_4px_12px_rgba(34,197,94,0.4)]';
+    else if (s === 'Rejected') base = 'border-red-400/50 shadow-[0_4px_12px_rgba(239,68,68,0.4)]';
+    else if (s === 'Not Applicable') base = 'border-slate-400/50 shadow-[0_4px_12px_rgba(100,116,139,0.4)]';
+    else base = 'border-yellow-400/50 shadow-[0_4px_12px_rgba(234,179,8,0.4)]';
+    
+    const darkBg = {
+      Approved: 'bg-green-500/20 text-green-400',
+      Rejected: 'bg-red-500/20 text-red-400',
+      'Not Applicable': 'bg-slate-500/20 text-slate-300',
+      Pending: 'bg-yellow-500/20 text-yellow-400'
+    };
+    const lightBg = {
+      Approved: 'bg-green-100 text-green-800',
+      Rejected: 'bg-red-100 text-red-800',
+      'Not Applicable': 'bg-slate-100 text-slate-700',
+      Pending: 'bg-yellow-100 text-yellow-800'
+    };
+    const colors = darkMode ? darkBg[s] || darkBg.Pending : lightBg[s] || lightBg.Pending;
+    return `${base} ${colors}`;
   }, [darkMode]);
 
+  // Row hover: removed zoom/scale, only subtle shadow transition
   const rowClassName = useCallback((rowData) => {
+    let classes = 'transition-all duration-200';
     const status = rowData.pendingStatus;
-    if (status === 'Rejected') return darkMode ? 'row-rejected-dark' : 'row-rejected-light';
-    if (status === 'Approved') return darkMode ? 'row-done-dark' : 'row-done-light';
-    return '';
+    if (status === 'Rejected') classes += darkMode ? ' row-rejected-dark' : ' row-rejected-light';
+    else if (status === 'Approved') classes += darkMode ? ' row-done-dark' : ' row-done-light';
+    return classes;
   }, [darkMode]);
 
   const approvalFieldsMap = useMemo(() => ({
@@ -670,6 +679,8 @@ const TrackerPage = () => {
     'gsmColorLotsPlannedStatus': { by: 'gsmColorLotsApprovedBy', date: 'gsmColorLotsApprovedDate' }
   }), []);
 
+  // Date cell template with glassmorphism (kept)
+  // Date cell template with clean solid styles to prevent scroll leakage
   const createClickableBody = useCallback((field, isDate = false) => (rowData) => {
     const val = rowData[field];
     const isDateField = (field === 'factoryFOB') || isDate;
@@ -683,20 +694,43 @@ const TrackerPage = () => {
       const fNew = isDateField && rawNew ? formatDate(rawNew) : String(rawNew);
       return fOld !== fNew;
     });
+
+    // Removed backdrop-blur and transform to fix horizontal scroll overlapping glitch
+    const dateBoxClasses = `rounded-lg px-2 py-1 text-xs font-medium transition-all duration-200 shadow-sm ${
+      darkMode ? 'bg-slate-700 border border-slate-600 text-white' : 'bg-slate-100 border border-slate-200 text-slate-800'
+    }`;
+
     return (
       <div className="flex items-center gap-2">
-        <span
-          className={`cursor-pointer transition-all flex items-center font-medium px-2 py-1 rounded-lg text-sm ${
-            hasHistory
-              ? (darkMode ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 shadow-sm' : 'bg-orange-100 text-orange-700 border border-orange-200 shadow-sm')
-              : (darkMode ? 'hover:text-cyan-400' : 'hover:text-blue-600')
-          }`}
-          onClick={(e) => { e.stopPropagation(); showCellHistory(e, field, rowData); }}
-          title={hasHistory ? "Updated recently" : "View History"}
-        >
-          {display || '-'}
-          {hasHistory && <div className="w-2 h-2 rounded-full bg-orange-500 ml-2 animate-pulse" />}
-        </span>
+        {isDateField ? (
+          <div className={dateBoxClasses}>
+            <span
+              className={`cursor-pointer flex items-center ${
+                hasHistory
+                  ? (darkMode ? 'text-orange-400' : 'text-orange-700')
+                  : ''
+              }`}
+              onClick={(e) => { e.stopPropagation(); showCellHistory(e, field, rowData); }}
+              title={hasHistory ? "Updated recently" : "View History"}
+            >
+              {display || '-'}
+              {hasHistory && <div className="w-2 h-2 rounded-full bg-orange-500 ml-2 animate-pulse" />}
+            </span>
+          </div>
+        ) : (
+          <span
+            className={`cursor-pointer transition-all flex items-center font-medium px-2 py-1 rounded-lg text-sm ${
+              hasHistory
+                ? (darkMode ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 shadow-sm' : 'bg-orange-100 text-orange-700 border border-orange-200 shadow-sm')
+                : (darkMode ? 'hover:text-cyan-400' : 'hover:text-blue-600')
+            }`}
+            onClick={(e) => { e.stopPropagation(); showCellHistory(e, field, rowData); }}
+            title={hasHistory ? "Updated recently" : "View History"}
+          >
+            {display || '-'}
+            {hasHistory && <div className="w-2 h-2 rounded-full bg-orange-500 ml-2 animate-pulse" />}
+          </span>
+        )}
       </div>
     );
   }, [darkMode, formatDate, showCellHistory]);
@@ -708,7 +742,7 @@ const TrackerPage = () => {
     if (status === 'Approved') displayStatus = 'APPROVE';
     else if (status === 'Pending') displayStatus = 'PENDING';
     else if (status === 'Rejected') displayStatus = 'REJECT';
-    else if (status === 'Not Applicable') displayStatus = 'N/A';   // short label
+    else if (status === 'Not Applicable') displayStatus = 'N/A';
     else displayStatus = status.toUpperCase();
     const approvalInfo = approvalFieldsMap[field];
     const approvedBy = approvalInfo && rowData[approvalInfo.by];
@@ -777,6 +811,7 @@ const TrackerPage = () => {
 
   const visibleColumns = useMemo(() => allColumnDefs.filter(col => !hiddenColumns.includes(col.field)), [allColumnDefs, hiddenColumns]);
 
+  // Original column header rendering (multi‑line where needed)
   const renderHeader = (col) => {
     if (!col.header || !col.header.includes('(')) return col.header;
     const idx = col.header.indexOf('(');
@@ -790,74 +825,78 @@ const TrackerPage = () => {
     );
   };
 
-  // -------- TOOLBAR LEFT (with Bulk Update) --------
+  // Compact toolbar (as requested)
   const toolbarLeft = useMemo(() => (
-    <div className="flex gap-3 items-center flex-wrap">
+    <div className="flex gap-2 items-center flex-wrap">
       {hasData && (
         <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
-          <Menu size={20} />
+          <Menu size={16} />
         </button>
       )}
       <span className="relative flex items-center">
-        <Search size={16} className={`absolute left-3 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
+        <Search size={14} className={`absolute left-3 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
         <InputText 
           value={globalFilter} 
           onChange={(e) => setGlobalFilter(e.target.value)} 
-          placeholder="Search items..." 
-          className={`pl-9 pr-3 py-2 rounded-xl text-sm border w-[180px] md:w-[220px] transition-all ${darkMode ? 'bg-slate-800 border-slate-700 text-white focus:border-cyan-500' : 'bg-white border-gray-300 focus:border-blue-500'} shadow-[0_2px_8px_rgba(0,0,0,0.1)]`}
+          placeholder="Search..." 
+          className={`pl-8 pr-3 py-1.5 rounded-lg text-xs border w-[140px] md:w-[180px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white focus:border-cyan-500' : 'bg-white border-gray-300 focus:border-blue-500'} shadow-sm`}
         />
       </span>
       {(isAdmin || isPMA) && (
-        <button onClick={openNew} className="flex items-center gap-2 bg-[#0080ff] hover:bg-blue-600 px-5 py-2 rounded-xl font-semibold shadow-[0_4px_10px_rgba(0,128,255,0.4)] hover:shadow-[0_6px_14px_rgba(0,128,255,0.6)] transition-all text-white text-sm transform hover:-translate-y-0.5">
-          <Plus size={16} /> New Entry
+        <button onClick={openNew} className="flex items-center gap-1 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 
+          px-3 py-1.5 rounded-lg font-bold text-white text-xs transition-all duration-300 shadow-md hover:-translate-y-0.5">
+          <Plus size={14} /> New
         </button>
       )}
       {isAdmin && (
-        <button onClick={() => setImportDialog(true)} className="flex items-center gap-2 bg-[#22c55e] hover:bg-green-600 px-5 py-2 rounded-xl font-semibold shadow-[0_4px_10px_rgba(34,197,94,0.4)] hover:shadow-[0_6px_14px_rgba(34,197,94,0.6)] transition-all text-white text-sm transform hover:-translate-y-0.5">
-          <Upload size={16} /> Import Excel
+        <button onClick={() => setImportDialog(true)} className="flex items-center gap-1 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 
+          px-3 py-1.5 rounded-lg font-bold text-white text-xs transition-all duration-300 shadow-md hover:-translate-y-0.5">
+          <Upload size={14} /> Import
         </button>
       )}
       {selectedRows.length > 0 && (
-        <button onClick={() => setBulkDialogVisible(true)} className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 px-5 py-2 rounded-xl text-sm font-semibold shadow-[0_4px_10px_rgba(147,51,234,0.4)] hover:shadow-[0_6px_14px_rgba(147,51,234,0.6)] transition-all text-white transform hover:-translate-y-0.5">
-          <Layers size={16} /> Bulk Update ({selectedRows.length})
+        <button onClick={() => setBulkDialogVisible(true)} className="flex items-center gap-1 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 
+          px-3 py-1.5 rounded-lg font-bold text-white text-xs transition-all duration-300 shadow-md hover:-translate-y-0.5">
+          <Layers size={14} /> Bulk ({selectedRows.length})
         </button>
       )}
       {isAdmin && (
-        <button onClick={confirmDelete} disabled={selectedRows.length === 0} className="flex items-center gap-2 bg-red-500 hover:bg-red-600 px-5 py-2 rounded-xl text-sm font-semibold shadow-[0_4px_10px_rgba(239,68,68,0.4)] hover:shadow-[0_6px_14px_rgba(239,68,68,0.6)] transition-all disabled:opacity-50 text-white transform hover:-translate-y-0.5">
-          <Trash2 size={16} /> Delete
+        <button onClick={confirmDelete} disabled={selectedRows.length === 0} className="flex items-center gap-1 bg-gradient-to-r from-red-500 to-red-400 hover:from-red-400 hover:to-red-300 
+          px-3 py-1.5 rounded-lg font-bold text-white text-xs transition-all duration-300 shadow-md hover:-translate-y-0.5 disabled:opacity-50">
+          <Trash2 size={14} /> Del
         </button>
       )}
     </div>
   ), [isAdmin, isPMA, openNew, selectedRows, confirmDelete, darkMode, hasData, globalFilter]);
 
   const toolbarRight = useMemo(() => (
-    <div className="flex gap-3 items-center flex-wrap">
-      <Dropdown value={selectedCatalog} options={catalogOptions} onChange={(e) => setSelectedCatalog(e.value)} placeholder="Select Catalog" showClear className="w-[160px] shadow-sm" />
-      <div className="flex items-center gap-2">
+    <div className="flex gap-2 items-center flex-wrap">
+      <Dropdown value={selectedCatalog} options={catalogOptions} onChange={(e) => setSelectedCatalog(e.value)} placeholder="Catalog" showClear className="w-[120px] shadow-sm" />
+      <div className="flex items-center gap-1">
         <Checkbox inputId="exportSelected" checked={exportSelectedOnly} onChange={e => setExportSelectedOnly(e.checked)} disabled={selectedRows.length === 0} />
-        <label htmlFor="exportSelected" className={`text-xs ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Export Selected</label>
+        <label htmlFor="exportSelected" className={`text-[10px] ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Selected</label>
       </div>
-      <button onClick={handleExportMasterLedger} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border shadow-md hover:shadow-lg ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}><Download size={16} /> Excel (Ledger)</button>
-      <button onClick={handleExportHistoryLog} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border shadow-md hover:shadow-lg ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}><Download size={16} /> Excel (History)</button>
-      <button onClick={handleExportCSV} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border shadow-md hover:shadow-lg ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}><Download size={16} /> CSV</button>
-      <button onClick={() => window.print()} className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all border shadow-md hover:shadow-lg ${darkMode ? 'bg-white/10 hover:bg-white/20 border-white/10 text-white' : 'bg-white hover:bg-gray-50 border-gray-200 text-gray-700 shadow-sm'}`}><Printer size={16} /> Print</button>
+      <button onClick={handleExportMasterLedger} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-300 border hover:-translate-y-0.5 ${darkMode ? 'bg-white/5 hover:bg-white/10 border-white/10 text-white' : 'bg-white/70 hover:bg-white border-gray-200/70 text-gray-700'}`}><Download size={14} /> Excel (L)</button>
+      <button onClick={handleExportHistoryLog} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-300 border hover:-translate-y-0.5 ${darkMode ? 'bg-white/5 hover:bg-white/10 border-white/10 text-white' : 'bg-white/70 hover:bg-white border-gray-200/70 text-gray-700'}`}><Download size={14} /> Excel (H)</button>
+      <button onClick={handleExportCSV} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-300 border hover:-translate-y-0.5 ${darkMode ? 'bg-white/5 hover:bg-white/10 border-white/10 text-white' : 'bg-white/70 hover:bg-white border-gray-200/70 text-gray-700'}`}><Download size={14} /> CSV</button>
+      <button onClick={() => window.print()} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all duration-300 border hover:-translate-y-0.5 ${darkMode ? 'bg-white/5 hover:bg-white/10 border-white/10 text-white' : 'bg-white/70 hover:bg-white border-gray-200/70 text-gray-700'}`}><Printer size={14} /> Print</button>
       {isAdmin && (
-        <MultiSelect value={hiddenColumns} options={allColumnDefs.filter(col => col.field !== 'selection' && col.field !== 'actions').map(col => ({ label: col.header, value: col.field }))} onChange={(e) => setHiddenColumns(e.value)} placeholder="Hide Columns" className="max-w-[160px]" display="chip" />
+        <MultiSelect value={hiddenColumns} options={allColumnDefs.filter(col => col.field !== 'selection' && col.field !== 'actions').map(col => ({ label: col.header, value: col.field }))} onChange={(e) => setHiddenColumns(e.value)} placeholder="Hide" className="max-w-[120px]" display="chip" />
       )}
       <button 
         onClick={() => setDarkMode(!darkMode)} 
-        className={`p-2.5 rounded-xl transition-all border shadow-md hover:shadow-lg ${darkMode ? 'bg-slate-800 border-slate-700 text-yellow-400 hover:bg-slate-700' : 'bg-white border-gray-200 text-slate-700 hover:bg-gray-50 shadow-sm'}`}
-        title="Toggle Light/Dark Theme"
+        className={`p-2 rounded-lg transition-all duration-300 border hover:-translate-y-0.5 ${darkMode ? 'bg-slate-800/80 border-slate-700 text-yellow-400' : 'bg-white/80 border-gray-200 text-slate-700'}`}
+        title="Toggle theme"
       >
-        {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+        {darkMode ? <Sun size={14} /> : <Moon size={14} />}
       </button>
     </div>
   ), [exportSelectedOnly, selectedRows, handleExportMasterLedger, handleExportHistoryLog, handleExportCSV, isAdmin, allColumnDefs, darkMode, selectedCatalog, catalogOptions, hiddenColumns]);
 
   const dialogFooter = useMemo(() => (
     <div className="flex justify-end gap-3 mt-4">
-      <button onClick={hideDialog} className="px-5 py-2.5 rounded-xl font-medium text-gray-500 hover:bg-gray-100 transition-all">Cancel</button>
-      <button onClick={handleSave} className="bg-[#0080ff] px-6 py-2.5 rounded-xl font-semibold shadow-lg hover:bg-blue-600 transition-all text-white shadow-[0_4px_14px_rgba(0,128,255,0.4)]">Save Record</button>
+      <button onClick={hideDialog} className="px-4 py-2 rounded-lg font-medium text-gray-500 hover:bg-gray-100 transition-all text-xs">Cancel</button>
+      <button onClick={handleSave} className="bg-gradient-to-r from-blue-600 to-blue-500 px-5 py-2 rounded-lg font-bold shadow-lg hover:from-blue-500 hover:to-blue-400 transition-all text-white text-xs">Save</button>
     </div>
   ), [hideDialog, handleSave]);
 
@@ -869,36 +908,40 @@ const TrackerPage = () => {
 
   const NavItem = useCallback(({ icon: Icon, label, path, active }) => (
     <button onClick={() => { navigate(path); setSidebarOpen(false); }}
-      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${active ? 'bg-[#0080ff] text-white shadow-md' : (darkMode ? 'text-gray-400 hover:bg-white/5 hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900')}`}>
-      <Icon size={20} /> {label}
+      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl font-medium transition-all text-sm ${active ? 'bg-[#0080ff] text-white shadow-md' : (darkMode ? 'text-gray-400 hover:bg-white/5 hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900')}`}>
+      <Icon size={18} /> {label}
     </button>
   ), [darkMode, navigate]);
 
   const renderApprovalFields = (statusField, byField, dateField) => {
     if (formData[statusField] !== 'Approved') return null;
     return (
-      <div className="field md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4 mt-2 p-3 rounded-lg border border-green-500/30 bg-green-50/10">
+      <div className="field md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-3 mt-2 p-2 rounded-lg border border-green-500/30 bg-green-50/10 text-xs">
         <div>
-          <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-green-400' : 'text-green-700'}`}>Approved By</label>
-          <InputText value={formData[byField] || ''} onChange={(e) => setFormData({ ...formData, [byField]: e.target.value })} placeholder="Enter name" disabled={!isFieldEditable(byField)} className={`w-full p-2 text-sm ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'} rounded-lg`} />
+          <label className={`block text-[11px] font-semibold mb-1 ${darkMode ? 'text-green-400' : 'text-green-700'}`}>Approved By</label>
+          <InputText value={formData[byField] || ''} onChange={(e) => setFormData({ ...formData, [byField]: e.target.value })} placeholder="Enter name" disabled={!isFieldEditable(byField)} className={`w-full p-1.5 text-xs ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'} rounded-lg`} />
         </div>
         <div>
-          <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-green-400' : 'text-green-700'}`}>Approved Date</label>
-          <Calendar value={formData[dateField] ? new Date(formData[dateField]) : null} onChange={(e) => setFormData({ ...formData, [dateField]: dateToStr(e.value) })} dateFormat="dd/mm/yy" disabled={!isFieldEditable(dateField)} className="w-full" inputClassName="p-2 text-sm" />
+          <label className={`block text-[11px] font-semibold mb-1 ${darkMode ? 'text-green-400' : 'text-green-700'}`}>Approved Date</label>
+          <Calendar value={formData[dateField] ? new Date(formData[dateField]) : null} onChange={(e) => setFormData({ ...formData, [dateField]: dateToStr(e.value) })} dateFormat="dd/mm/yy" disabled={!isFieldEditable(dateField)} className="w-full" inputClassName="p-1.5 text-xs" />
         </div>
       </div>
     );
   };
 
   return (
-    <div className={`flex h-screen w-full ${darkMode ? 'bg-[#0f172a] text-white' : 'bg-[#f4f7fb] text-slate-900'} perspective-1000`}>
+    <div className={`flex h-screen w-full ${darkMode ? 'bg-gradient-to-br from-slate-900 via-[#0f172a] to-slate-900 text-white' : 'bg-gradient-to-br from-gray-100 via-blue-50 to-gray-100 text-slate-900'} perspective-[1200px]`}>
       <Toast ref={toast} />
       <ConfirmDialog visible={confirmState.visible} onHide={() => setConfirmState(prev => ({ ...prev, visible: false }))} message={confirmState.message} header="Confirmation" icon="pi pi-exclamation-triangle" accept={confirmState.accept} />
 
       {hasData && (
         <>
           {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setSidebarOpen(false)} />}
-          <aside className={`fixed top-0 left-0 z-50 w-[260px] h-full flex flex-col justify-between transition-transform duration-300 ease-in-out transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${darkMode ? 'bg-[#1e293b] border-gray-800 shadow-2xl' : 'bg-white border-gray-200 shadow-2xl'} border-r`}>
+          <aside className={`fixed top-0 left-0 z-50 w-[260px] h-full flex flex-col justify-between transition-transform duration-500 ease-out transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
+            ${darkMode 
+              ? 'bg-white/5 backdrop-blur-2xl border-r border-white/10 shadow-[0_25px_50px_rgba(0,0,0,0.5)]' 
+              : 'bg-white/80 backdrop-blur-xl border-r border-gray-200/80 shadow-[0_25px_50px_rgba(0,0,0,0.15)]'}
+            rounded-r-3xl overflow-hidden`}>
             <div>
               <div className="p-6 pb-8 border-b border-transparent flex justify-between items-center">
                 <div className="flex items-center gap-3">
@@ -914,7 +957,7 @@ const TrackerPage = () => {
               </div>
             </div>
             <div className="p-4">
-              <div className={`p-4 rounded-2xl mb-3 border ${darkMode ? 'bg-white/5 border-white/10' : 'bg-white border-gray-100 shadow-sm'}`}>
+              <div className={`p-4 rounded-2xl mb-3 border ${darkMode ? 'bg-white/5 backdrop-blur-md border-white/10 shadow-lg' : 'bg-white/60 backdrop-blur-md border-gray-200/80 shadow-md'}`}>
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-[#0080ff] text-white flex items-center justify-center font-bold text-lg">{user?.name?.charAt(0).toUpperCase() || 'A'}</div>
                   <div><p className="font-bold text-sm leading-tight">{user?.name || 'Admin'}</p><p className={`text-xs capitalize ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{user?.role || 'Admin'}</p></div>
@@ -931,7 +974,11 @@ const TrackerPage = () => {
           <Toolbar left={toolbarLeft} right={toolbarRight} className={`rounded-xl border-none shadow-[0_8px_30px_rgb(0,0,0,0.12)] ${darkMode ? 'bg-[#1e293b]' : 'bg-white'}`} />
         </div>
         <div className="flex-1 px-2 md:px-4 pb-2 overflow-hidden flex flex-col" style={{ minHeight: 0 }}>
-          <div className={`transition-all rounded-2xl shadow-[0_12px_40px_rgb(0,0,0,0.15)] overflow-hidden flex-1 flex flex-col border ${darkMode ? 'bg-[#1e293b] border-gray-800' : 'bg-white border-gray-100'}`}>
+          <div className={`transition-all duration-300 rounded-2xl overflow-hidden flex-1 flex flex-col border 
+            ${darkMode 
+              ? 'bg-slate-800/80 backdrop-blur-md border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.5)] hover:shadow-[0_25px_70px_rgba(0,0,0,0.6)]' 
+              : 'bg-white/80 backdrop-blur-md border-gray-200/80 shadow-[0_20px_60px_rgba(0,0,0,0.1)] hover:shadow-[0_25px_70px_rgba(0,0,0,0.15)]'}
+            transform-gpu`}>
             <DataTable 
               value={filteredData} 
               selection={selectedRows} 
@@ -957,8 +1004,10 @@ const TrackerPage = () => {
         </div>
       </main>
 
-      {/* BULK UPDATE DIALOG */}
-      <Dialog visible={bulkDialogVisible} style={{ width: '450px' }} header="Bulk Update" modal onHide={() => { setBulkDialogVisible(false); setBulkUpdateField(''); setBulkUpdateValue(''); }} className={darkMode ? 'dark-dialog' : ''}>
+      {/* All dialogs unchanged from previous (compact toolbar versions remain) */}
+      <Dialog visible={bulkDialogVisible} style={{ width: '450px' }} header="Bulk Update" modal 
+        className={`rounded-2xl ${darkMode ? '!bg-slate-900/80 !backdrop-blur-xl !border !border-white/10 !shadow-[0_30px_60px_rgba(0,0,0,0.7)]' : '!bg-white/90 !backdrop-blur-xl !shadow-[0_20px_50px_rgba(0,0,0,0.2)]'}`}
+        onHide={() => { setBulkDialogVisible(false); setBulkUpdateField(''); setBulkUpdateValue(''); }}>
         <div className="mt-4 space-y-4">
           <p className="text-sm opacity-80">You have selected <b>{selectedRows.length}</b> records.</p>
           {bulkFieldOptions.length === 0 ? (
@@ -966,67 +1015,33 @@ const TrackerPage = () => {
           ) : (
             <>
               <div>
-                <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Select Field to Update</label>
-                <Dropdown 
-                  value={bulkUpdateField} 
-                  options={bulkFieldOptions} 
-                  onChange={(e) => { 
-                    setBulkUpdateField(e.value); 
-                    setBulkUpdateValue(''); 
-                  }} 
-                  placeholder="Choose a field" 
-                  className="w-full" 
-                />
+                <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Select Field</label>
+                <Dropdown value={bulkUpdateField} options={bulkFieldOptions} onChange={(e) => { setBulkUpdateField(e.value); setBulkUpdateValue(''); }} placeholder="Choose a field" className="w-full" />
               </div>
               <div>
                 <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>
-                  {getFieldType(bulkUpdateField) === 'date' ? 'Select Date' : 
-                  getFieldType(bulkUpdateField) === 'status' ? 'Select Status' : 'Enter Value'}
+                  {getFieldType(bulkUpdateField) === 'date' ? 'Select Date' : getFieldType(bulkUpdateField) === 'status' ? 'Select Status' : 'Enter Value'}
                 </label>
                 {getFieldType(bulkUpdateField) === 'date' ? (
-                  <Calendar 
-                    value={bulkUpdateValue ? new Date(bulkUpdateValue) : null} 
-                    onChange={(e) => setBulkUpdateValue(dateToStr(e.value))} 
-                    dateFormat="dd/mm/yy" 
-                    showIcon 
-                    className="w-full" 
-                    inputClassName={`p-2 text-sm rounded-lg w-full ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`}
-                    placeholder="Pick a date"
-                  />
+                  <Calendar value={bulkUpdateValue ? new Date(bulkUpdateValue) : null} onChange={(e) => setBulkUpdateValue(dateToStr(e.value))} dateFormat="dd/mm/yy" showIcon className="w-full" inputClassName={`p-2 text-sm rounded-lg w-full ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`} placeholder="Pick a date" />
                 ) : getFieldType(bulkUpdateField) === 'status' ? (
-                  <Dropdown 
-                    value={bulkUpdateValue || 'Pending'} 
-                    options={statusOptions} 
-                    onChange={(e) => setBulkUpdateValue(e.value)} 
-                    placeholder="Choose status" 
-                    className="w-full" 
-                  />
+                  <Dropdown value={bulkUpdateValue || 'Pending'} options={statusOptions} onChange={(e) => setBulkUpdateValue(e.value)} placeholder="Choose status" className="w-full" />
                 ) : (
-                  <InputText 
-                    value={bulkUpdateValue} 
-                    onChange={(e) => setBulkUpdateValue(e.target.value)} 
-                    placeholder="Enter value" 
-                    className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`}
-                  />
+                  <InputText value={bulkUpdateValue} onChange={(e) => setBulkUpdateValue(e.target.value)} placeholder="Enter value" className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`} />
                 )}
               </div>
               <div className="flex gap-3 pt-2">
                 <button onClick={() => { setBulkDialogVisible(false); setBulkUpdateField(''); setBulkUpdateValue(''); }} className="w-1/2 border py-2.5 rounded-xl font-bold transition-all hover:bg-gray-100 dark:hover:bg-slate-800">Cancel</button>
-                <button 
-                  onClick={handleBulkUpdateSubmit} 
-                  disabled={!bulkUpdateField || !bulkUpdateValue || bulkFieldOptions.length === 0} 
-                  className="w-1/2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white py-2.5 rounded-xl font-bold shadow-lg transition-all"
-                >
-                  Apply Changes
-                </button>
+                <button onClick={handleBulkUpdateSubmit} disabled={!bulkUpdateField || !bulkUpdateValue || bulkFieldOptions.length === 0} className="w-1/2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white py-2.5 rounded-xl font-bold shadow-lg transition-all">Apply</button>
               </div>
             </>
           )}
         </div>
       </Dialog>
 
-      {/* RENAME DIALOG */}
-      <Dialog visible={renameDialog} style={{ width: '400px' }} header="Rename Column" modal onHide={() => setRenameDialog(false)} className={darkMode ? 'dark-dialog' : ''}>
+      <Dialog visible={renameDialog} style={{ width: '400px' }} header="Rename Column" modal 
+        className={`rounded-2xl ${darkMode ? '!bg-slate-900/80 !backdrop-blur-xl !border !border-white/10 !shadow-[0_30px_60px_rgba(0,0,0,0.7)]' : '!bg-white/90 !backdrop-blur-xl !shadow-[0_20px_50px_rgba(0,0,0,0.2)]'}`}
+        onHide={() => setRenameDialog(false)}>
         <div className="mt-4 space-y-4">
           <div>
             <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Select Column</label>
@@ -1036,11 +1051,10 @@ const TrackerPage = () => {
             <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>New Name</label>
             <InputText value={renamedColName} onChange={(e) => setRenamedColName(e.target.value)} placeholder="Enter new name" className={`w-full ${darkMode ? 'bg-white/5 border-white/10 text-white' : ''}`} onKeyDown={(e) => e.key === 'Enter' && handleRenameColumn()} />
           </div>
-          <button onClick={handleRenameColumn} disabled={!colToRename || !renamedColName} className="w-full mt-2 bg-[#0080ff] hover:bg-blue-600 disabled:opacity-50 text-white py-3 rounded-xl font-bold shadow-lg transition-all">Rename Column</button>
+          <button onClick={handleRenameColumn} disabled={!colToRename || !renamedColName} className="w-full mt-2 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:opacity-50 text-white py-3 rounded-xl font-bold shadow-lg transition-all">Rename Column</button>
         </div>
       </Dialog>
 
-      {/* HISTORY OVERLAY */}
       <OverlayPanel ref={op} className={`shadow-2xl rounded-2xl ${darkMode ? 'bg-slate-800 border-white/10 text-white' : 'bg-white border-slate-200 text-slate-800'}`} style={{ maxWidth: '550px' }}>
         <div className="p-4">
           <div className="flex justify-between items-center mb-3 gap-4 flex-wrap">
@@ -1099,10 +1113,11 @@ const TrackerPage = () => {
         </div>
       </OverlayPanel>
 
-      {/* ENTRY FORM DIALOG */}
-      <Dialog visible={formDialog} style={{ width: '950px' }} header={isEditing ? 'Edit Record' : 'New Record'} modal footer={dialogFooter} onHide={hideDialog} className={darkMode ? 'dark-dialog' : ''}>
+      <Dialog visible={formDialog} style={{ width: '950px' }} header={isEditing ? 'Edit Record' : 'New Record'} modal footer={dialogFooter} 
+        className={`rounded-2xl ${darkMode ? '!bg-slate-900/80 !backdrop-blur-xl !border !border-white/10 !shadow-[0_30px_60px_rgba(0,0,0,0.7)]' : '!bg-white/90 !backdrop-blur-xl !shadow-[0_20px_50px_rgba(0,0,0,0.2)]'}`}
+        onHide={hideDialog}>
         <TabView className="mt-2">
-          <TabPanel header="Basic Details">
+          <TabPanel header="Basic Details" className={`${darkMode ? 'bg-white/5 backdrop-blur-sm rounded-xl p-2' : 'bg-white/80 backdrop-blur-sm rounded-xl p-2'}`}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-2">
               <div className="field">
                 <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>CAT NO</label>
@@ -1126,7 +1141,7 @@ const TrackerPage = () => {
               </div>
             </div>
           </TabPanel>
-          <TabPanel header="Labdip & Photo">
+          <TabPanel header="Labdip & Photo" className={`${darkMode ? 'bg-white/5 backdrop-blur-sm rounded-xl p-2' : 'bg-white/80 backdrop-blur-sm rounded-xl p-2'}`}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-2">
               <div className="field md:col-span-2">
                 <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>PhotoShoot Date</label>
@@ -1164,7 +1179,7 @@ const TrackerPage = () => {
               </div>
             </div>
           </TabPanel>
-          <TabPanel header="FPT, GPT & GSM">
+          <TabPanel header="FPT, GPT & GSM" className={`${darkMode ? 'bg-white/5 backdrop-blur-sm rounded-xl p-2' : 'bg-white/80 backdrop-blur-sm rounded-xl p-2'}`}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-2">
               <div className="field">
                 <label className={`block text-xs font-semibold mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>FPT Due Date</label>
@@ -1210,8 +1225,8 @@ const TrackerPage = () => {
         </TabView>
       </Dialog>
 
-      {/* IMPORT DIALOGS */}
-      <Dialog visible={importDialog} onHide={() => { setImportDialog(false); setImportFile(null); }} header="Import Excel" modal style={{ width: '450px' }} className={darkMode ? 'dark-dialog' : ''}>
+      <Dialog visible={importDialog} onHide={() => { setImportDialog(false); setImportFile(null); }} header="Import Excel" modal style={{ width: '450px' }} 
+        className={`rounded-2xl ${darkMode ? '!bg-slate-900/80 !backdrop-blur-xl !border !border-white/10 !shadow-[0_30px_60px_rgba(0,0,0,0.7)]' : '!bg-white/90 !backdrop-blur-xl !shadow-[0_20px_50px_rgba(0,0,0,0.2)]'}`}>
         <div className="mt-4 space-y-4">
           <p className="text-sm">Columns expected: <b>CAT NO, Style No., Style Name, Factory FOB, Photoshoot date</b></p>
           <input type="file" accept=".xlsx" onChange={(e) => setImportFile(e.target.files[0])} className="w-full p-2 border rounded" />
@@ -1222,7 +1237,8 @@ const TrackerPage = () => {
         </div>
       </Dialog>
 
-      <Dialog visible={showPreview} onHide={() => { setShowPreview(false); setPreviewEntries([]); }} header="Preview Import" modal style={{ width: '95%', maxWidth: '1100px' }} className={darkMode ? 'dark-dialog' : ''}>
+      <Dialog visible={showPreview} onHide={() => { setShowPreview(false); setPreviewEntries([]); }} header="Preview Import" modal style={{ width: '95%', maxWidth: '1100px' }} 
+        className={`rounded-2xl ${darkMode ? '!bg-slate-900/80 !backdrop-blur-xl !border !border-white/10 !shadow-[0_30px_60px_rgba(0,0,0,0.7)]' : '!bg-white/90 !backdrop-blur-xl !shadow-[0_20px_50px_rgba(0,0,0,0.2)]'}`}>
         <div className="mt-4">
           <div className="flex gap-4 mb-4">
             <div className={`p-3 rounded-lg border ${darkMode ? 'bg-white/5' : 'bg-blue-50'}`}>
@@ -1258,4 +1274,4 @@ const TrackerPage = () => {
   );
 };
 
-export default TrackerPage;      
+export default TrackerPage;
