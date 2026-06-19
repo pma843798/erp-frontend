@@ -91,8 +91,8 @@ export const prepareHistoryData = (rows) => {
       if (String(oldVal) === String(newVal)) return;
 
       historyEntries.push({
-        'Style No.': row.styleNo,
         'CAT NO': row.catNo,
+        'Style No.': row.styleNo,
         'Field': hist.field,
         'Old Value': (hist.field.toLowerCase().includes('date') || hist.field === 'factoryFOB') ? formatDate(oldVal) : String(oldVal),
         'New Value': (hist.field.toLowerCase().includes('date') || hist.field === 'factoryFOB') ? formatDate(newVal) : String(newVal),
