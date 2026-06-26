@@ -171,10 +171,8 @@ const TrackerPage = () => {
     return savedTheme ? savedTheme === 'dark' : false;
   });
 
- useEffect(() => {
+  useEffect(() => {
     localStorage.setItem('theme', darkMode ? 'dark' : 'light');
-    
-
     if (darkMode) {
       document.documentElement.classList.add('dark');
     } else {
@@ -466,6 +464,26 @@ const TrackerPage = () => {
     }
   }, [colToRename, renamedColName, customCols, renameColumn, loadData]);
 
+  // 🔽 IMPORT SECTION WITH ENHANCED FIELDS & TEMPLATE DOWNLOAD
+  const downloadImportTemplate = useCallback(() => {
+    const templateData = [{
+      'CAT NO': '',
+      'Style No.': '',
+      'Style Name': '',
+      'Factory FOB': '',
+      'Photoshoot date': '',
+      'Labdip Due Date': '',
+      'Photo Sample Due Date': '',
+      'FPT Due Date': '',
+      'GPT Due Date': '',
+      'GSM/Color Due Date': '',
+    }];
+    const ws = XLSX.utils.json_to_sheet(templateData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Template');
+    XLSX.writeFile(wb, 'import_template.xlsx');
+  }, []);
+
   const handleParseFile = useCallback(async () => {
     if (!importFile) {
       toast.current?.show({ severity: 'warn', summary: 'No file', detail: 'Please select an Excel file.', life: 3000 });
@@ -483,13 +501,20 @@ const TrackerPage = () => {
         setImporting(false);
         return;
       }
+
       const headerMap = {
         'CAT NO': 'catNo',
         'Style No.': 'styleNo',
         'Style Name': 'styleName',
         'Factory FOB': 'factoryFOB',
         'Photoshoot date': 'vendorPhotoShootDate',
+        'Labdip Due Date': 'labdipQualityDeskloomDue',
+        'Photo Sample Due Date': 'photoSampleDue',
+        'FPT Due Date': 'fptDueDate',
+        'GPT Due Date': 'gptDueDate',
+        'GSM/Color Due Date': 'gsmColorLotsDue',
       };
+
       const entries = jsonData.map(row => {
         const entry = {
           catNo: '',
@@ -507,20 +532,24 @@ const TrackerPage = () => {
           buyerApproval: 'Pending',
           priority: 'Medium',
         };
+
         Object.keys(row).forEach(excelHeader => {
           const field = headerMap[excelHeader];
           if (field) {
             let val = row[excelHeader];
-            if (field === 'factoryFOB' || field === 'vendorPhotoShootDate') {
+            // Apply date parsing for all known date fields
+            if (allDateFields.includes(field)) {
               val = parseExcelDate(val);
             }
             entry[field] = val;
           } else {
+            // Keep unknown columns as custom fields (if any)
             entry[excelHeader] = row[excelHeader];
           }
         });
         return entry;
       });
+
       setPreviewEntries(entries);
       setImportDialog(false);
       setShowPreview(true);
@@ -558,6 +587,8 @@ const TrackerPage = () => {
     loadData();
     setImporting(false);
   }, [isAdmin, previewEntries, loadData]);
+
+  // ... rest of the functions (export, history, etc.) remain unchanged ...
 
   const handleExportMasterLedger = useCallback(() => {
     const rows = exportSelectedOnly && selectedRows.length ? selectedRows : filteredData;
@@ -662,7 +693,6 @@ const TrackerPage = () => {
     return `${base} ${colors}`;
   }, [darkMode]);
 
-  // Row hover: removed zoom/scale, only subtle shadow transition
   const rowClassName = useCallback((rowData) => {
     let classes = 'transition-all duration-200';
     const status = rowData.pendingStatus;
@@ -679,8 +709,6 @@ const TrackerPage = () => {
     'gsmColorLotsPlannedStatus': { by: 'gsmColorLotsApprovedBy', date: 'gsmColorLotsApprovedDate' }
   }), []);
 
-  // Date cell template with glassmorphism (kept)
-  // Date cell template with clean solid styles to prevent scroll leakage
   const createClickableBody = useCallback((field, isDate = false) => (rowData) => {
     const val = rowData[field];
     const isDateField = (field === 'factoryFOB') || isDate;
@@ -695,7 +723,6 @@ const TrackerPage = () => {
       return fOld !== fNew;
     });
 
-    // Removed backdrop-blur and transform to fix horizontal scroll overlapping glitch
     const dateBoxClasses = `rounded-lg px-2 py-1 text-xs font-medium transition-all duration-200 shadow-sm ${
       darkMode ? 'bg-slate-700 border border-slate-600 text-white' : 'bg-slate-100 border border-slate-200 text-slate-800'
     }`;
@@ -811,7 +838,6 @@ const TrackerPage = () => {
 
   const visibleColumns = useMemo(() => allColumnDefs.filter(col => !hiddenColumns.includes(col.field)), [allColumnDefs, hiddenColumns]);
 
-  // Original column header rendering (multi‑line where needed)
   const renderHeader = (col) => {
     if (!col.header || !col.header.includes('(')) return col.header;
     const idx = col.header.indexOf('(');
@@ -825,7 +851,6 @@ const TrackerPage = () => {
     );
   };
 
-  // Compact toolbar (as requested)
   const toolbarLeft = useMemo(() => (
     <div className="flex gap-2 items-center flex-wrap">
       {hasData && (
@@ -1004,7 +1029,7 @@ const TrackerPage = () => {
         </div>
       </main>
 
-      {/* All dialogs unchanged from previous (compact toolbar versions remain) */}
+      {/* Bulk Update Dialog */}
       <Dialog visible={bulkDialogVisible} style={{ width: '450px' }} header="Bulk Update" modal 
         className={`rounded-2xl ${darkMode ? '!bg-slate-900/80 !backdrop-blur-xl !border !border-white/10 !shadow-[0_30px_60px_rgba(0,0,0,0.7)]' : '!bg-white/90 !backdrop-blur-xl !shadow-[0_20px_50px_rgba(0,0,0,0.2)]'}`}
         onHide={() => { setBulkDialogVisible(false); setBulkUpdateField(''); setBulkUpdateValue(''); }}>
@@ -1039,6 +1064,7 @@ const TrackerPage = () => {
         </div>
       </Dialog>
 
+      {/* Rename Column Dialog */}
       <Dialog visible={renameDialog} style={{ width: '400px' }} header="Rename Column" modal 
         className={`rounded-2xl ${darkMode ? '!bg-slate-900/80 !backdrop-blur-xl !border !border-white/10 !shadow-[0_30px_60px_rgba(0,0,0,0.7)]' : '!bg-white/90 !backdrop-blur-xl !shadow-[0_20px_50px_rgba(0,0,0,0.2)]'}`}
         onHide={() => setRenameDialog(false)}>
@@ -1225,10 +1251,16 @@ const TrackerPage = () => {
         </TabView>
       </Dialog>
 
+      {/* Import Dialog with Template Download */}
       <Dialog visible={importDialog} onHide={() => { setImportDialog(false); setImportFile(null); }} header="Import Excel" modal style={{ width: '450px' }} 
         className={`rounded-2xl ${darkMode ? '!bg-slate-900/80 !backdrop-blur-xl !border !border-white/10 !shadow-[0_30px_60px_rgba(0,0,0,0.7)]' : '!bg-white/90 !backdrop-blur-xl !shadow-[0_20px_50px_rgba(0,0,0,0.2)]'}`}>
         <div className="mt-4 space-y-4">
-          <p className="text-sm">Columns expected: <b>CAT NO, Style No., Style Name, Factory FOB, Photoshoot date</b></p>
+          <p className="text-sm">Columns expected: <b>CAT NO, Style No., Style Name, Factory FOB, Photoshoot date, Labdip Due Date, Photo Sample Due Date, FPT Due Date, GPT Due Date, GSM/Color Due Date</b></p>
+          <div className="flex gap-2 mb-2">
+            <button onClick={downloadImportTemplate} className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 transition">
+              <Download size={14} /> Download Template
+            </button>
+          </div>
           <input type="file" accept=".xlsx" onChange={(e) => setImportFile(e.target.files[0])} className="w-full p-2 border rounded" />
           <div className="flex justify-end gap-3">
             <button onClick={() => { setImportDialog(false); setImportFile(null); }} className="px-4 py-2 rounded border">Cancel</button>
@@ -1261,6 +1293,11 @@ const TrackerPage = () => {
             <Column field="styleName" header="Style Name" style={{ minWidth: '200px' }} />
             <Column field="factoryFOB" header="Factory FOB" body={(row) => row.factoryFOB || '-'} style={{ minWidth: '120px' }} />
             <Column field="vendorPhotoShootDate" header="Photoshoot date" body={(row) => row.vendorPhotoShootDate || '-'} style={{ minWidth: '140px' }} />
+            <Column field="labdipQualityDeskloomDue" header="Labdip Due" body={(row) => row.labdipQualityDeskloomDue || '-'} />
+            <Column field="photoSampleDue" header="Photo Due" body={(row) => row.photoSampleDue || '-'} />
+            <Column field="fptDueDate" header="FPT Due" body={(row) => row.fptDueDate || '-'} />
+            <Column field="gptDueDate" header="GPT Due" body={(row) => row.gptDueDate || '-'} />
+            <Column field="gsmColorLotsDue" header="GSM Due" body={(row) => row.gsmColorLotsDue || '-'} />
           </DataTable>
           <div className="flex justify-end gap-3 mt-4">
             <button onClick={() => { setShowPreview(false); setPreviewEntries([]); }} className="px-4 py-2 rounded border">Cancel</button>
