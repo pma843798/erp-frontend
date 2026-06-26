@@ -27,7 +27,6 @@ import {
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
-// Friendly display names for history fields
 const activityNameMap = {
   labdipPlannedDate: 'Labdip (Planned Date)',
   labdipPlannedStatus: 'Labdip (Status)',
@@ -52,14 +51,12 @@ const Dashboard = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  // ---- Existing state ----
   const [stats, setStats] = useState(null);
   const [completionRate, setCompletionRate] = useState({ percent: 0, filled: 0, total: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [greeting, setGreeting] = useState('');
 
-  // ---- Latest Updates state ----
   const [updates, setUpdates] = useState([]);
   const [allStyles, setAllStyles] = useState([]);
   const [loadingUpdates, setLoadingUpdates] = useState(true);
@@ -81,10 +78,8 @@ const Dashboard = () => {
     localStorage.setItem('theme', darkMode ? 'dark' : 'light');
   }, [darkMode]);
 
-  // ---- Role check ----
   const userRole = user?.role?.toLowerCase();
 
-  // ---- Data fetching ----
   useEffect(() => {
     const hour = new Date().getHours();
     if (hour < 12) setGreeting('Good Morning ☀️');
@@ -102,7 +97,6 @@ const Dashboard = () => {
         setStats(statsResponse.data);
         setAllStyles(allEntries);
 
-        // ---- Build updates from embedded history ----
         const allHistory = [];
         allEntries.forEach(entry => {
           if (entry.history && Array.isArray(entry.history)) {
@@ -123,11 +117,9 @@ const Dashboard = () => {
           }
         });
 
-        // Sort newest first & limit to 50
         allHistory.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
         setUpdates(allHistory.slice(0, 50));
 
-        // Completion rate (same as before)
         let filledDates = 0;
         const totalDateFields = allEntries.length * 2;
         allEntries.forEach(entry => {
@@ -173,7 +165,6 @@ const Dashboard = () => {
     return Math.floor(diffTime / (1000 * 60 * 60 * 24));
   };
 
-  // ---- Computed values ----
   const filteredUpdates = useMemo(() => {
     return updates.filter(update => {
       if (filters.styleNo && !update.styleNo?.toLowerCase().includes(filters.styleNo.toLowerCase())) return false;
@@ -268,9 +259,12 @@ const Dashboard = () => {
     [updates]
   );
 
-  const NavItem = ({ icon: Icon, label, path, active }) => (
-    <button
-      onClick={() => navigate(path)}
+  // 🆕 NavItem now opens in new tab
+  const NavItem = ({ icon: Icon, label, path, active, openInNewTab = true }) => (
+    <a
+      href={path}
+      target={openInNewTab ? '_blank' : '_self'}
+      rel="noopener noreferrer"
       className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${
         active
           ? 'bg-[#0080ff] text-white shadow-md'
@@ -281,7 +275,7 @@ const Dashboard = () => {
     >
       <Icon size={20} />
       {label}
-    </button>
+    </a>
   );
 
   if (loading) {
@@ -376,7 +370,7 @@ const Dashboard = () => {
           </div>
 
           <div className="px-4 flex flex-col gap-2 mt-4">
-            <NavItem icon={LayoutDashboard} label="Dashboard" path="/dashboard" active={true} />
+            <NavItem icon={LayoutDashboard} label="Dashboard" path="/dashboard" active={true} openInNewTab={false} />
             <NavItem icon={Database} label="All Entries" path="/tracker" active={false} />
             {user?.role === 'admin' && <NavItem icon={Users} label="Users" path="/users" active={false} />}
           </div>
@@ -450,10 +444,10 @@ const Dashboard = () => {
           </div>
         </header>
 
-        {/* Scrollable content area */}
+        {/* Scrollable content area – table will scroll naturally, all rows visible */}
         <div className="flex-1 px-4 md:px-8 py-6 overflow-y-auto">
           
-          {/* 1. Stat Cards (always visible) */}
+          {/* Stat Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
             {cards.map((card, idx) => {
               const styles = getCardStyles(card.id, card.color);
@@ -490,7 +484,7 @@ const Dashboard = () => {
             })}
           </div>
 
-          {/* 2. Quick Insights (always visible) */}
+          {/* Quick Insights */}
           <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div
               className={`rounded-2xl p-5 border ${
@@ -527,10 +521,9 @@ const Dashboard = () => {
             </div>
           </div>
 
-          {/* 3. Latest Updates Section – ONLY for admin & pma */}
+          {/* Latest Updates Section – admin/pma only */}
           {(userRole === 'admin' || userRole === 'pma') && (
             <>
-              {/* Latest Updates Table */}
               <div className="mt-10 mb-8">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
@@ -645,108 +638,105 @@ const Dashboard = () => {
                   </div>
                 </div>
 
-                {/* Table */}
+                {/* Table wrapper */}
                 <div
-                  className={`rounded-2xl border overflow-hidden shadow-sm ${
+                  className={`rounded-2xl border overflow-x-auto shadow-sm ${
                     darkMode ? 'bg-[#1e293b] border-gray-700' : 'bg-white border-gray-200'
                   }`}
                 >
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead
-                        className={`${
-                          darkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-50 text-gray-600'
-                        }`}
-                      >
+                  <table className="w-full text-sm">
+                    <thead
+                      className={`${
+                        darkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-50 text-gray-600'
+                      }`}
+                    >
+                      <tr>
+                        <th className="p-3 text-left font-semibold">Style No</th>
+                        <th className="p-3 text-left font-semibold">CAT No</th>
+                        <th className="p-3 text-left font-semibold">Activity</th>
+                        <th className="p-3 text-left font-semibold">Previous Status</th>
+                        <th className="p-3 text-left font-semibold">New Status</th>
+                        <th className="p-3 text-left font-semibold">Updated By</th>
+                        <th className="p-3 text-left font-semibold">Updated At</th>
+                        <th className="p-3 text-left font-semibold">Days Since Update</th>
+                        <th className="p-3 text-left font-semibold">Days Since Last Style Update</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                      {filteredUpdates.length === 0 ? (
                         <tr>
-                          <th className="p-3 text-left font-semibold">Style No</th>
-                          <th className="p-3 text-left font-semibold">CAT No</th>
-                          <th className="p-3 text-left font-semibold">Activity</th>
-                          <th className="p-3 text-left font-semibold">Previous Status</th>
-                          <th className="p-3 text-left font-semibold">New Status</th>
-                          <th className="p-3 text-left font-semibold">Updated By</th>
-                          <th className="p-3 text-left font-semibold">Updated At</th>
-                          <th className="p-3 text-left font-semibold">Days Since Update</th>
-                          <th className="p-3 text-left font-semibold">Days Since Last Style Update</th>
+                          <td colSpan={9} className="p-6 text-center text-gray-500 dark:text-gray-400">
+                            No updates match the current filters.
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                        {filteredUpdates.length === 0 ? (
-                          <tr>
-                            <td colSpan={9} className="p-6 text-center text-gray-500 dark:text-gray-400">
-                              No updates match the current filters.
-                            </td>
-                          </tr>
-                        ) : (
-                          filteredUpdates.map((update, idx) => {
-                            const styleLatestDate = styleLatestUpdateMap[update.styleNo];
-                            const daysSinceStyleUpdate = styleLatestDate
-                              ? daysSince(styleLatestDate)
-                              : null;
-                            const daysSinceThisUpdate = daysSince(update.updatedAt);
-                            const statusClass = getStatusClass(update.newStatus);
-                            return (
-                              <tr
-                                key={idx}
-                                onClick={() => handleRowClick(update.styleNo)}
-                                className={`cursor-pointer transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20 ${statusClass}`}
-                              >
-                                <td className="p-3 font-medium">{update.styleNo}</td>
-                                <td className="p-3">{update.catNo || '-'}</td>
-                                <td className="p-3">{update.activityName}</td>
-                                <td className="p-3 text-gray-500 dark:text-gray-400">
-                                  {update.previousStatus || '-'}
-                                </td>
-                                <td className="p-3 font-semibold">
-                                  <span
-                                    className={`px-2 py-1 rounded-full text-xs font-bold ${
-                                      update.newStatus?.toLowerCase().includes('approved') ||
-                                      update.newStatus?.toLowerCase().includes('completed')
-                                        ? 'bg-green-100 text-green-800 dark:bg-green-800/30 dark:text-green-300'
-                                        : update.newStatus?.toLowerCase().includes('pending')
-                                        ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800/30 dark:text-yellow-300'
-                                        : update.newStatus?.toLowerCase().includes('delayed')
-                                        ? 'bg-red-100 text-red-800 dark:bg-red-800/30 dark:text-red-300'
-                                        : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                                    }`}
-                                  >
-                                    {update.newStatus}
-                                  </span>
-                                </td>
-                                <td className="p-3">{update.updatedBy}</td>
-                                <td className="p-3 whitespace-nowrap">
-                                  {new Date(update.updatedAt).toLocaleDateString('en-GB', {
-                                    day: '2-digit',
-                                    month: 'short',
-                                    year: 'numeric',
-                                  })}{' '}
-                                  {new Date(update.updatedAt).toLocaleTimeString('en-US', {
-                                    hour: '2-digit',
-                                    minute: '2-digit',
-                                    hour12: true,
-                                  })}
-                                </td>
-                                <td className="p-3">
-                                  {daysSinceThisUpdate != null ? `${daysSinceThisUpdate} day(s)` : '-'}
-                                </td>
-                                <td className="p-3">
-                                  {daysSinceStyleUpdate != null
-                                    ? `${daysSinceStyleUpdate} day(s)`
-                                    : '-'}
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                      ) : (
+                        filteredUpdates.map((update, idx) => {
+                          const styleLatestDate = styleLatestUpdateMap[update.styleNo];
+                          const daysSinceStyleUpdate = styleLatestDate
+                            ? daysSince(styleLatestDate)
+                            : null;
+                          const daysSinceThisUpdate = daysSince(update.updatedAt);
+                          const statusClass = getStatusClass(update.newStatus);
+                          return (
+                            <tr
+                              key={idx}
+                              onClick={() => handleRowClick(update.styleNo)}
+                              className={`cursor-pointer transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20 ${statusClass}`}
+                            >
+                              <td className="p-3 font-medium">{update.styleNo}</td>
+                              <td className="p-3">{update.catNo || '-'}</td>
+                              <td className="p-3">{update.activityName}</td>
+                              <td className="p-3 text-gray-500 dark:text-gray-400">
+                                {update.previousStatus || '-'}
+                              </td>
+                              <td className="p-3 font-semibold">
+                                <span
+                                  className={`px-2 py-1 rounded-full text-xs font-bold ${
+                                    update.newStatus?.toLowerCase().includes('approved') ||
+                                    update.newStatus?.toLowerCase().includes('completed')
+                                      ? 'bg-green-100 text-green-800 dark:bg-green-800/30 dark:text-green-300'
+                                      : update.newStatus?.toLowerCase().includes('pending')
+                                      ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800/30 dark:text-yellow-300'
+                                      : update.newStatus?.toLowerCase().includes('delayed')
+                                      ? 'bg-red-100 text-red-800 dark:bg-red-800/30 dark:text-red-300'
+                                      : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
+                                  }`}
+                                >
+                                  {update.newStatus}
+                                </span>
+                              </td>
+                              <td className="p-3">{update.updatedBy}</td>
+                              <td className="p-3 whitespace-nowrap">
+                                {new Date(update.updatedAt).toLocaleDateString('en-GB', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  year: 'numeric',
+                                })}{' '}
+                                {new Date(update.updatedAt).toLocaleTimeString('en-US', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                  hour12: true,
+                                })}
+                              </td>
+                              <td className="p-3">
+                                {daysSinceThisUpdate != null ? `${daysSinceThisUpdate} day(s)` : '-'}
+                              </td>
+                              <td className="p-3">
+                                {daysSinceStyleUpdate != null
+                                  ? `${daysSinceStyleUpdate} day(s)`
+                                  : '-'}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
 
               {/* Widgets Row */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                {/* Recently Updated Styles Widget */}
                 <div
                   className={`rounded-2xl p-5 border ${
                     darkMode ? 'bg-[#1e293b] border-gray-700' : 'bg-white border-gray-200 shadow-sm'
@@ -783,7 +773,6 @@ const Dashboard = () => {
                   </button>
                 </div>
 
-                {/* Styles With No Update In Last 7 Days Widget */}
                 <div
                   className={`rounded-2xl p-5 border ${
                     darkMode ? 'bg-[#1e293b] border-gray-700' : 'bg-white border-gray-200 shadow-sm'

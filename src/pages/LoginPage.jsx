@@ -38,21 +38,17 @@ const LoginPage = () => {
 
   return (
     <div className="min-h-screen flex bg-white selection:bg-cyan-500 selection:text-white">
-      {/* Left Side - Professional Collaborative Panel */}
       <div
         className="hidden lg:flex lg:w-1/2 relative overflow-hidden items-center justify-center bg-cover bg-center"
         style={{ backgroundImage: "url('https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1920&q=80')" }}
       >
-        {/* High-End Abstract Blur Overlay */}
         <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900/90 to-blue-950/80 backdrop-blur-[2px]"></div>
 
-        {/* Content over Image */}
         <div className="relative z-10 p-12 text-white max-w-lg">
           <div className="w-16 h-16 bg-white/10 rounded-3xl backdrop-blur-md flex items-center justify-center mb-8 border border-white/20 shadow-2xl">
             <Grid size={32} className="text-cyan-400" />
           </div>
           
-          {/* ✅ UPDATED TEXT HERE */}
           <h1 className="text-5xl font-extrabold tracking-tight mb-6 leading-[1.1]">
             Premier Asia, <br/>
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 to-blue-200">
@@ -69,13 +65,11 @@ const LoginPage = () => {
               <div className="w-10 h-10 rounded-full border-2 border-slate-900 bg-indigo-500"></div>
               <div className="w-10 h-10 rounded-full border-2 border-slate-900 bg-cyan-500"></div>
             </div>
-            {/* ✅ UPDATED TRUST BADGE TEXT */}
             <p className="text-sm text-slate-400 font-medium">Trusted by top manufacturers across Asia</p>
           </div>
         </div>
       </div>
 
-      {/* Right Side - Clean Login Form */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 sm:p-12 bg-slate-50 relative">
         
         <div className="w-full max-w-md bg-white p-10 rounded-3xl shadow-xl shadow-slate-100 border border-slate-100">
