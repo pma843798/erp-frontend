@@ -16,7 +16,8 @@ import {
   Sun,
   Moon,
   Grid,
-  Database
+  Database,
+  Edit3
 } from 'lucide-react';
 
 import { useAuth } from '../context/AuthContext';
@@ -30,6 +31,7 @@ const UserManagement = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
 
   const [darkMode, setDarkMode] = useState(() => {
     const savedTheme = localStorage.getItem('theme');
@@ -44,10 +46,15 @@ const UserManagement = () => {
     name: '', email: '', password: '', role: 'vendor',
   });
 
+  const [editingUser, setEditingUser] = useState(null);
+  const [editForm, setEditForm] = useState({
+    name: '', email: '', role: ''
+  });
+
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!user) return; 
+    if (!user) return;
     if (user.role !== 'admin') {
       navigate('/dashboard');
     } else {
@@ -98,6 +105,36 @@ const UserManagement = () => {
     }
   };
 
+  // Edit handlers
+  const openEdit = (rowData) => {
+    setEditingUser(rowData);
+    setEditForm({
+      name: rowData.name || '',
+      email: rowData.email || '',
+      role: rowData.role || 'vendor'
+    });
+    setShowEdit(true);
+  };
+
+  const handleEditSave = async () => {
+    if (!editForm.name || !editForm.email) {
+      toast.current.show({ severity: 'warn', summary: 'Validation', detail: 'Name and email are required.', life: 3000 });
+      return;
+    }
+    try {
+      await api.put(`/auth/users/${editingUser._id}`, {
+        name: editForm.name,
+        email: editForm.email,
+        role: editForm.role
+      });
+      toast.current.show({ severity: 'success', summary: 'Updated', detail: 'User details updated successfully', life: 2000 });
+      setShowEdit(false);
+      fetchUsers();
+    } catch (error) {
+      toast.current.show({ severity: 'error', summary: 'Error', detail: error.response?.data?.message || 'Update failed', life: 3000 });
+    }
+  };
+
   const getTodayDate = () => {
     const date = new Date();
     const y = date.getFullYear();
@@ -107,14 +144,23 @@ const UserManagement = () => {
   };
 
   const actionBodyTemplate = (rowData) => (
-    <button
-      onClick={() => handleDelete(rowData)}
-      disabled={rowData._id === user._id}
-      title={rowData._id === user._id ? "Cannot delete yourself" : "Delete User"}
-      className="w-10 h-10 rounded-xl bg-red-50 hover:bg-red-500 text-red-500 hover:text-white flex items-center justify-center transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-    >
-      <Trash2 size={18} />
-    </button>
+    <div className="flex gap-2 justify-center">
+      <button
+        onClick={() => openEdit(rowData)}
+        className="w-10 h-10 rounded-xl bg-blue-50 hover:bg-blue-500 text-blue-500 hover:text-white flex items-center justify-center transition-all"
+        title="Edit user"
+      >
+        <Edit3 size={18} />
+      </button>
+      <button
+        onClick={() => handleDelete(rowData)}
+        disabled={rowData._id === user._id}
+        title={rowData._id === user._id ? "Cannot delete yourself" : "Delete User"}
+        className="w-10 h-10 rounded-xl bg-red-50 hover:bg-red-500 text-red-500 hover:text-white flex items-center justify-center transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <Trash2 size={18} />
+      </button>
+    </div>
   );
 
   const roleBodyTemplate = (rowData) => {
@@ -261,13 +307,14 @@ const UserManagement = () => {
                 <Column field="name" header="Name" sortable />
                 <Column field="email" header="Email" sortable />
                 <Column field="role" header="Role" body={roleBodyTemplate} sortable />
-                <Column header="Action" body={actionBodyTemplate} style={{ width: '100px', textAlign: 'center' }} />
+                <Column header="Actions" body={actionBodyTemplate} style={{ width: '130px', textAlign: 'center' }} />
               </DataTable>
             </div>
           </div>
         </div>
       </main>
 
+      {/* Create Dialog (existing) */}
       <Dialog visible={showCreate} onHide={() => setShowCreate(false)} header="Create New User" style={{ width: '400px' }} className={darkMode ? 'dark-dialog' : ''} modal>
         <div className="flex flex-col gap-4 mt-2">
           <div>
@@ -289,6 +336,28 @@ const UserManagement = () => {
           <button onClick={handleCreate} disabled={submitting} className="w-full mt-4 bg-[#0080ff] hover:bg-blue-600 disabled:opacity-50 text-white py-3 rounded-xl font-bold shadow-sm transition-all flex justify-center items-center gap-2">
             {submitting ? 'Creating...' : <><UserPlus size={18} /> Create User</>}
           </button>
+        </div>
+      </Dialog>
+
+      {/* EDIT Dialog (new) */}
+      <Dialog visible={showEdit} onHide={() => setShowEdit(false)} header="Edit User" style={{ width: '400px' }} className={darkMode ? 'dark-dialog' : ''} modal>
+        <div className="flex flex-col gap-4 mt-2">
+          <div>
+            <label className={`block text-sm font-medium mb-1.5 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Full Name</label>
+            <InputText value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className={`w-full ${darkMode ? 'bg-white/5 border-white/10 text-white' : ''}`} />
+          </div>
+          <div>
+            <label className={`block text-sm font-medium mb-1.5 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Email Address</label>
+            <InputText type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} className={`w-full ${darkMode ? 'bg-white/5 border-white/10 text-white' : ''}`} />
+          </div>
+          <div>
+            <label className={`block text-sm font-medium mb-1.5 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Role</label>
+            <Dropdown value={editForm.role} options={[{ label: 'Vendor', value: 'vendor' }, { label: 'PMA', value: 'pma' }, { label: 'Admin', value: 'admin' }]} onChange={(e) => setEditForm({ ...editForm, role: e.value })} className={`w-full ${darkMode ? 'bg-white/5 border-white/10 text-white' : ''}`} />
+          </div>
+          <div className="flex gap-3 justify-end mt-2">
+            <button onClick={() => setShowEdit(false)} className="px-4 py-2 rounded-xl border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700">Cancel</button>
+            <button onClick={handleEditSave} className="px-4 py-2 rounded-xl bg-[#0080ff] text-white hover:bg-blue-600 font-semibold">Save Changes</button>
+          </div>
         </div>
       </Dialog>
     </div>
