@@ -22,7 +22,7 @@ import * as XLSX from 'xlsx';
 
 import {
   LayoutDashboard, LogOut, Plus, Trash2, Download, Printer,
-  Sun, Moon, Columns, Edit3, Users, Database, Grid, FilterX, Menu, Upload, Layers, Search
+  Sun, Moon, Columns, Edit3, Users, Database, Grid, FilterX, Menu, Upload, Layers
 } from 'lucide-react';
 import { exportMasterLedger, exportHistoryLog, exportCSV } from '../utils/excelExport';
 
@@ -122,6 +122,30 @@ const parseExcelDate = (val) => {
   return null;
 };
 
+// ─── CUSTOM DATE FILTER COMPONENT (FIXED) ───
+const DateColumnFilter = ({ value, filterApplyCallback }) => {
+  return (
+    <Calendar
+      value={value ? new Date(value) : null}
+      onChange={(e) => {
+        filterApplyCallback(e.value); // pass Date object or null
+      }}
+      dateFormat="dd/mm/yy"
+      placeholder="Select date"
+      className="p-column-filter"
+      showIcon
+    />
+  );
+};
+
+// ─── CUSTOM DATE FILTER FUNCTION ───
+const dateFilterFunction = (value, filter) => {
+  if (!filter || !value) return true;
+  const rowDate = value instanceof Date ? value : new Date(value);
+  const filterDate = filter instanceof Date ? filter : new Date(filter);
+  return rowDate.toDateString() === filterDate.toDateString();
+};
+
 const TrackerPage = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -148,7 +172,6 @@ const TrackerPage = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedCatalog, setSelectedCatalog] = useState(null);
 
-  const [globalFilter, setGlobalFilter] = useState('');
   const [bulkDialogVisible, setBulkDialogVisible] = useState(false);
   const [bulkUpdateField, setBulkUpdateField] = useState('');
   const [bulkUpdateValue, setBulkUpdateValue] = useState('');
@@ -158,6 +181,11 @@ const TrackerPage = () => {
   const [importing, setImporting] = useState(false);
   const [previewEntries, setPreviewEntries] = useState([]);
   const [showPreview, setShowPreview] = useState(false);
+
+  // Global date range filter states
+  const [dateFilterField, setDateFilterField] = useState(null);
+  const [dateFilterStart, setDateFilterStart] = useState(null);
+  const [dateFilterEnd, setDateFilterEnd] = useState(null);
 
   const userRole = user?.role?.toLowerCase();
   const isAdmin = userRole === 'admin';
@@ -282,8 +310,15 @@ const TrackerPage = () => {
       .map(item => ({ label: item.catNo, value: item.catNo }));
   }, [data]);
 
+  const dateFilterFieldOptions = useMemo(() => [
+    { label: 'All Date Fields', value: '__all__' },
+    ...allDateFields.map(f => ({ label: makeLabel(f), value: f })),
+    { label: 'Created Date', value: 'createdAt' },
+  ], []);
+
   const filteredData = useMemo(() => {
     let result = data;
+    // Status filter from URL
     if (filter && filter !== 'all') {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -319,9 +354,58 @@ const TrackerPage = () => {
           result = data;
       }
     }
+
+    // Catalog filter
     if (selectedCatalog) result = result.filter(item => item.catNo === selectedCatalog);
+
+    // Global date range filter
+    if (dateFilterField && (dateFilterStart || dateFilterEnd)) {
+      const start = dateFilterStart ? new Date(dateFilterStart) : null;
+      const end = dateFilterEnd ? new Date(dateFilterEnd) : null;
+      if (start) start.setHours(0, 0, 0, 0);
+      if (end) end.setHours(23, 59, 59, 999);
+
+      result = result.filter(item => {
+        if (dateFilterField === '__all__') {
+          return allDateFields.some(field => {
+            const val = item[field];
+            if (!val) return false;
+            const d = new Date(val);
+            if (isNaN(d.getTime())) return false;
+            if (start && d < start) return false;
+            if (end && d > end) return false;
+            return true;
+          });
+        }
+        const val = item[dateFilterField];
+        if (!val) return false;
+        const d = new Date(val);
+        if (isNaN(d.getTime())) return false;
+        if (start && d < start) return false;
+        if (end && d > end) return false;
+        return true;
+      });
+    }
+
     return [...result].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-  }, [data, filter, selectedCatalog]);
+  }, [data, filter, selectedCatalog, dateFilterField, dateFilterStart, dateFilterEnd]);
+
+  // Convert date strings to Date objects for column filtering
+  const displayData = useMemo(() => {
+    return filteredData.map(item => {
+      const newItem = { ...item };
+      allDateFields.forEach(field => {
+        const val = newItem[field];
+        if (val && typeof val === 'string') {
+          const d = new Date(val);
+          if (!isNaN(d.getTime())) {
+            newItem[field] = d;
+          }
+        }
+      });
+      return newItem;
+    });
+  }, [filteredData]);
 
   const hasData = filteredData.length > 0;
 
@@ -381,12 +465,8 @@ const TrackerPage = () => {
       const textOpts = textFields.map(f => ({ label: makeLabel(f), value: f }));
       return [...dateOpts, ...statusOpts, ...textOpts];
     }
-    if (isPMA) {
-      return statusFields.map(f => ({ label: makeLabel(f), value: f }));
-    }
-    if (isVendor) {
-      return plannedDateFields.map(f => ({ label: makeLabel(f), value: f }));
-    }
+    if (isPMA) return statusFields.map(f => ({ label: makeLabel(f), value: f }));
+    if (isVendor) return plannedDateFields.map(f => ({ label: makeLabel(f), value: f }));
     return [];
   }, [isAdmin, isPMA, isVendor]);
 
@@ -406,9 +486,7 @@ const TrackerPage = () => {
     }
     setLoading(true);
     try {
-      const promises = selectedRows.map(row => 
-        api.put(`/tracker/${row._id}`, { [bulkUpdateField]: bulkUpdateValue })
-      );
+      const promises = selectedRows.map(row => api.put(`/tracker/${row._id}`, { [bulkUpdateField]: bulkUpdateValue }));
       await Promise.all(promises);
       toast.current.show({ severity: 'success', summary: 'Bulk Updated', detail: `Successfully updated ${selectedRows.length} records`, life: 2000 });
       setBulkDialogVisible(false);
@@ -464,7 +542,7 @@ const TrackerPage = () => {
     }
   }, [colToRename, renamedColName, customCols, renameColumn, loadData]);
 
-  // 🔽 IMPORT SECTION WITH ENHANCED FIELDS & TEMPLATE DOWNLOAD
+  // Import functions
   const downloadImportTemplate = useCallback(() => {
     const templateData = [{
       'CAT NO': '',
@@ -501,7 +579,6 @@ const TrackerPage = () => {
         setImporting(false);
         return;
       }
-
       const headerMap = {
         'CAT NO': 'catNo',
         'Style No.': 'styleNo',
@@ -514,42 +591,25 @@ const TrackerPage = () => {
         'GPT Due Date': 'gptDueDate',
         'GSM/Color Due Date': 'gsmColorLotsDue',
       };
-
       const entries = jsonData.map(row => {
         const entry = {
-          catNo: '',
-          styleNo: '',
-          styleName: '',
-          factoryFOB: null,
-          vendorPhotoShootDate: null,
-          labdipPlannedStatus: 'Pending',
-          photoSamplePlannedStatus: 'Pending',
-          plannedFPTStatus: 'Pending',
-          plannedGPTStatus: 'Pending',
-          gsmColorLotsPlannedStatus: 'Pending',
-          approvalStatus: 'Pending',
-          pendingStatus: 'In Progress',
-          buyerApproval: 'Pending',
-          priority: 'Medium',
+          catNo: '', styleNo: '', styleName: '', factoryFOB: null, vendorPhotoShootDate: null,
+          labdipPlannedStatus: 'Pending', photoSamplePlannedStatus: 'Pending',
+          plannedFPTStatus: 'Pending', plannedGPTStatus: 'Pending', gsmColorLotsPlannedStatus: 'Pending',
+          approvalStatus: 'Pending', pendingStatus: 'In Progress', buyerApproval: 'Pending', priority: 'Medium',
         };
-
         Object.keys(row).forEach(excelHeader => {
           const field = headerMap[excelHeader];
           if (field) {
             let val = row[excelHeader];
-            // Apply date parsing for all known date fields
-            if (allDateFields.includes(field)) {
-              val = parseExcelDate(val);
-            }
+            if (allDateFields.includes(field)) val = parseExcelDate(val);
             entry[field] = val;
           } else {
-            // Keep unknown columns as custom fields (if any)
             entry[excelHeader] = row[excelHeader];
           }
         });
         return entry;
       });
-
       setPreviewEntries(entries);
       setImportDialog(false);
       setShowPreview(true);
@@ -577,9 +637,7 @@ const TrackerPage = () => {
       try {
         await api.post('/tracker', entry);
         success++;
-      } catch (err) {
-        console.error('Import failed:', entry.styleNo, err);
-      }
+      } catch (err) { console.error('Import failed:', entry.styleNo, err); }
     }
     toast.current?.show({ severity: 'success', summary: 'Import finished', detail: `${success} of ${validEntries.length} imported.`, life: 4000 });
     setShowPreview(false);
@@ -588,8 +646,7 @@ const TrackerPage = () => {
     setImporting(false);
   }, [isAdmin, previewEntries, loadData]);
 
-  // ... rest of the functions (export, history, etc.) remain unchanged ...
-
+  // Export functions
   const handleExportMasterLedger = useCallback(() => {
     const rows = exportSelectedOnly && selectedRows.length ? selectedRows : filteredData;
     exportMasterLedger(rows, customCols, toast);
@@ -615,8 +672,7 @@ const TrackerPage = () => {
           await clearHistory(currentEntryId, cellField, selectedHistoryItems);
           toast.current.show({ severity: 'success', summary: 'Deleted', detail: 'Selected history entries removed', life: 2000 });
           const updatedEntry = await api.get(`/tracker/${currentEntryId}`);
-          const rowData = updatedEntry.data;
-          const raw = rowData.history || [];
+          const raw = updatedEntry.data.history || [];
           const filtered = raw.filter((h) => {
             if (h.field !== cellField || ['createdAt', 'updatedAt', '__v', 'history'].includes(h.field)) return false;
             const isDate = cellField === 'factoryFOB' || cellField.toLowerCase().includes('date') || cellField.toLowerCase().includes('due') || cellField.includes('FPT') || cellField.includes('GPT');
@@ -676,7 +732,6 @@ const TrackerPage = () => {
     else if (s === 'Rejected') base = 'border-red-400/50 shadow-[0_4px_12px_rgba(239,68,68,0.4)]';
     else if (s === 'Not Applicable') base = 'border-slate-400/50 shadow-[0_4px_12px_rgba(100,116,139,0.4)]';
     else base = 'border-yellow-400/50 shadow-[0_4px_12px_rgba(234,179,8,0.4)]';
-    
     const darkBg = {
       Approved: 'bg-green-500/20 text-green-400',
       Rejected: 'bg-red-500/20 text-red-400',
@@ -722,38 +777,22 @@ const TrackerPage = () => {
       const fNew = isDateField && rawNew ? formatDate(rawNew) : String(rawNew);
       return fOld !== fNew;
     });
-
-    const dateBoxClasses = `rounded-lg px-2 py-1 text-xs font-medium transition-all duration-200 shadow-sm ${
-      darkMode ? 'bg-slate-700 border border-slate-600 text-white' : 'bg-slate-100 border border-slate-200 text-slate-800'
-    }`;
-
+    const dateBoxClasses = `rounded-lg px-2 py-1 text-xs font-medium transition-all duration-200 shadow-sm ${darkMode ? 'bg-slate-700 border border-slate-600 text-white' : 'bg-slate-100 border border-slate-200 text-slate-800'}`;
     return (
       <div className="flex items-center gap-2">
         {isDateField ? (
           <div className={dateBoxClasses}>
-            <span
-              className={`cursor-pointer flex items-center ${
-                hasHistory
-                  ? (darkMode ? 'text-orange-400' : 'text-orange-700')
-                  : ''
-              }`}
+            <span className={`cursor-pointer flex items-center ${hasHistory ? (darkMode ? 'text-orange-400' : 'text-orange-700') : ''}`}
               onClick={(e) => { e.stopPropagation(); showCellHistory(e, field, rowData); }}
-              title={hasHistory ? "Updated recently" : "View History"}
-            >
+              title={hasHistory ? "Updated recently" : "View History"}>
               {display || '-'}
               {hasHistory && <div className="w-2 h-2 rounded-full bg-orange-500 ml-2 animate-pulse" />}
             </span>
           </div>
         ) : (
-          <span
-            className={`cursor-pointer transition-all flex items-center font-medium px-2 py-1 rounded-lg text-sm ${
-              hasHistory
-                ? (darkMode ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 shadow-sm' : 'bg-orange-100 text-orange-700 border border-orange-200 shadow-sm')
-                : (darkMode ? 'hover:text-cyan-400' : 'hover:text-blue-600')
-            }`}
+          <span className={`cursor-pointer transition-all flex items-center font-medium px-2 py-1 rounded-lg text-sm ${hasHistory ? (darkMode ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30 shadow-sm' : 'bg-orange-100 text-orange-700 border border-orange-200 shadow-sm') : (darkMode ? 'hover:text-cyan-400' : 'hover:text-blue-600')}`}
             onClick={(e) => { e.stopPropagation(); showCellHistory(e, field, rowData); }}
-            title={hasHistory ? "Updated recently" : "View History"}
-          >
+            title={hasHistory ? "Updated recently" : "View History"}>
             {display || '-'}
             {hasHistory && <div className="w-2 h-2 rounded-full bg-orange-500 ml-2 animate-pulse" />}
           </span>
@@ -808,33 +847,85 @@ const TrackerPage = () => {
   const actionBodyTemplate = useCallback((rowData) => (
     <Button icon="pi pi-pencil" className={`p-button-rounded p-button-text ${darkMode ? '!text-cyan-400 hover:!bg-cyan-400/10' : '!text-blue-600 hover:!bg-blue-50'}`} onClick={() => openEdit(rowData)} />
   ), [darkMode, openEdit]);
-
-  const allColumnDefs = useMemo(() => [
-    ...(isAdmin ? [{ field: 'selection', header: '', body: null, frozen: true, style: { width: '50px' } }] : []),
-    { field: 'catNo', header: 'CAT NO', frozen: true, style: { width: '160px' } },
-    { field: 'styleNo', header: 'Style No.', frozen: true, style: { width: '180px' } },
-    { field: 'styleName', header: 'Style Name', frozen: true, style: { width: '180px' } },
-    { field: 'factoryFOB', header: 'Factory FOB', isDate: true, style: { width: '110px' } },
-    { field: 'vendorPhotoShootDate', header: 'PhotoShoot Date', isDate: true, style: { width: '110px' } },
-    { field: 'labdipQualityDeskloomDue', header: 'Labdip (Due Date)', isDate: true, style: { width: '110px' } },
-    { field: 'labdipPlannedDate', header: 'Labdip (Planned Date)', isDate: true, style: { width: '110px' } },
-    { field: 'labdipPlannedStatus', header: 'Labdip (Status)', isStatus: true },
-    { field: 'fabInHousePlannedDate', header: 'Fab in house (Planned date)', isDate: true, style: { width: '110px' } },
-    { field: 'photoSampleDue', header: 'Photo Sample (Due Date)', isDate: true, style: { width: '110px' } },
-    { field: 'photoSamplePlannedDate', header: 'Photo Sample (Planned Date)', isDate: true, style: { width: '110px' } },
-    { field: 'photoSamplePlannedStatus', header: 'Photo Sample (Status)', isStatus: true },
-    { field: 'fptDueDate', header: 'FPT (Due)', isDate: true, style: { width: '110px' } },
-    { field: 'plannedFPT', header: 'FPT (Planned Date)', isDate: true, style: { width: '110px' } },
-    { field: 'plannedFPTStatus', header: 'FPT (Status)', isStatus: true },
-    { field: 'gptDueDate', header: 'GPT (Due)', isDate: true, style: { width: '110px' } },
-    { field: 'plannedGPT', header: 'GPT (Planned Date)', isDate: true, style: { width: '110px' } },
-    { field: 'plannedGPTStatus', header: 'GPT (Status)', isStatus: true },
-    { field: 'gsmColorLotsDue', header: 'Gsm/Color (Due Date)', isDate: true, style: { width: '110px' } },
-    { field: 'gsmColorLotsPlanned', header: 'Gsm/Color (Planned Date)', isDate: true, style: { width: '110px' } },
-    { field: 'gsmColorLotsPlannedStatus', header: 'Gsm/Color (Status)', isStatus: true },
-    { field: 'remark', header: 'Remark' },
-    { field: 'actions', header: 'Edit', frozen: true, style: { width: '80px' } }
-  ], [isAdmin]);
+const allColumnDefs = useMemo(() => [
+  ...(isAdmin ? [{ field: 'selection', header: '', body: null, frozen: true, style: { width: '50px' } }] : []),
+  { field: 'catNo', header: 'CAT NO', frozen: true, style: { width: '160px' }, filter: true, filterPlaceholder: 'Search' },
+  { field: 'styleNo', header: 'Style No.', frozen: true, style: { width: '180px' }, filter: true, filterPlaceholder: 'Search' },
+  { field: 'styleName', header: 'Style Name', frozen: true, style: { width: '180px' }, filter: true, filterPlaceholder: 'Search' },
+  // ─── DATE COLUMNS WITH dataType: 'date' ───
+  { field: 'factoryFOB', header: 'Factory FOB', isDate: true, style: { width: '110px' }, 
+    filter: true, dataType: 'date',
+    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+    filterFunction: dateFilterFunction,
+  },
+  { field: 'vendorPhotoShootDate', header: 'PhotoShoot Date', isDate: true, style: { width: '110px' }, 
+    filter: true, dataType: 'date',
+    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+    filterFunction: dateFilterFunction,
+  },
+  { field: 'labdipQualityDeskloomDue', header: 'Labdip (Due Date)', isDate: true, style: { width: '110px' }, 
+    filter: true, dataType: 'date',
+    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+    filterFunction: dateFilterFunction,
+  },
+  { field: 'labdipPlannedDate', header: 'Labdip (Planned Date)', isDate: true, style: { width: '110px' }, 
+    filter: true, dataType: 'date',
+    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+    filterFunction: dateFilterFunction,
+  },
+  { field: 'labdipPlannedStatus', header: 'Labdip (Status)', isStatus: true, filter: true, filterPlaceholder: 'Search' },
+  { field: 'fabInHousePlannedDate', header: 'Fab in house (Planned date)', isDate: true, style: { width: '110px' }, 
+    filter: true, dataType: 'date',
+    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+    filterFunction: dateFilterFunction,
+  },
+  { field: 'photoSampleDue', header: 'Photo Sample (Due Date)', isDate: true, style: { width: '110px' }, 
+    filter: true, dataType: 'date',
+    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+    filterFunction: dateFilterFunction,
+  },
+  { field: 'photoSamplePlannedDate', header: 'Photo Sample (Planned Date)', isDate: true, style: { width: '110px' }, 
+    filter: true, dataType: 'date',
+    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+    filterFunction: dateFilterFunction,
+  },
+  { field: 'photoSamplePlannedStatus', header: 'Photo Sample (Status)', isStatus: true, filter: true, filterPlaceholder: 'Search' },
+  { field: 'fptDueDate', header: 'FPT (Due)', isDate: true, style: { width: '110px' }, 
+    filter: true, dataType: 'date',
+    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+    filterFunction: dateFilterFunction,
+  },
+  { field: 'plannedFPT', header: 'FPT (Planned Date)', isDate: true, style: { width: '110px' }, 
+    filter: true, dataType: 'date',
+    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+    filterFunction: dateFilterFunction,
+  },
+  { field: 'plannedFPTStatus', header: 'FPT (Status)', isStatus: true, filter: true, filterPlaceholder: 'Search' },
+  { field: 'gptDueDate', header: 'GPT (Due)', isDate: true, style: { width: '110px' }, 
+    filter: true, dataType: 'date',
+    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+    filterFunction: dateFilterFunction,
+  },
+  { field: 'plannedGPT', header: 'GPT (Planned Date)', isDate: true, style: { width: '110px' }, 
+    filter: true, dataType: 'date',
+    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+    filterFunction: dateFilterFunction,
+  },
+  { field: 'plannedGPTStatus', header: 'GPT (Status)', isStatus: true, filter: true, filterPlaceholder: 'Search' },
+  { field: 'gsmColorLotsDue', header: 'Gsm/Color (Due Date)', isDate: true, style: { width: '110px' }, 
+    filter: true, dataType: 'date',
+    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+    filterFunction: dateFilterFunction,
+  },
+  { field: 'gsmColorLotsPlanned', header: 'Gsm/Color (Planned Date)', isDate: true, style: { width: '110px' }, 
+    filter: true, dataType: 'date',
+    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+    filterFunction: dateFilterFunction,
+  },
+  { field: 'gsmColorLotsPlannedStatus', header: 'Gsm/Color (Status)', isStatus: true, filter: true, filterPlaceholder: 'Search' },
+  { field: 'remark', header: 'Remark', filter: true, filterPlaceholder: 'Search' },
+  { field: 'actions', header: 'Edit', frozen: true, style: { width: '80px' } }
+], [isAdmin]);
 
   const visibleColumns = useMemo(() => allColumnDefs.filter(col => !hiddenColumns.includes(col.field)), [allColumnDefs, hiddenColumns]);
 
@@ -851,6 +942,7 @@ const TrackerPage = () => {
     );
   };
 
+  // Toolbar left – no global search, only date range filter and action buttons
   const toolbarLeft = useMemo(() => (
     <div className="flex gap-2 items-center flex-wrap">
       {hasData && (
@@ -858,41 +950,69 @@ const TrackerPage = () => {
           <Menu size={16} />
         </button>
       )}
-      <span className="relative flex items-center">
-        <Search size={14} className={`absolute left-3 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`} />
-        <InputText 
-          value={globalFilter} 
-          onChange={(e) => setGlobalFilter(e.target.value)} 
-          placeholder="Search..." 
-          className={`pl-8 pr-3 py-1.5 rounded-lg text-xs border w-[140px] md:w-[180px] ${darkMode ? 'bg-slate-800 border-slate-700 text-white focus:border-cyan-500' : 'bg-white border-gray-300 focus:border-blue-500'} shadow-sm`}
-        />
-      </span>
+      {/* Global date range filter */}
+      {hasData && (
+        <div className="flex items-center gap-1.5">
+          <Dropdown
+            value={dateFilterField}
+            options={dateFilterFieldOptions}
+            onChange={(e) => setDateFilterField(e.value)}
+            placeholder="Date Field"
+            showClear
+            className="w-[130px] shadow-sm text-xs"
+          />
+          <Calendar
+            value={dateFilterStart}
+            onChange={(e) => setDateFilterStart(e.value)}
+            placeholder="From"
+            dateFormat="dd/mm/yy"
+            showIcon
+            className="w-[110px] shadow-sm"
+            inputClassName="text-xs p-1"
+          />
+          <span className={`text-xs ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>–</span>
+          <Calendar
+            value={dateFilterEnd}
+            onChange={(e) => setDateFilterEnd(e.value)}
+            placeholder="To"
+            dateFormat="dd/mm/yy"
+            showIcon
+            className="w-[110px] shadow-sm"
+            inputClassName="text-xs p-1"
+          />
+          {(dateFilterField || dateFilterStart || dateFilterEnd) && (
+            <button
+              onClick={() => { setDateFilterField(null); setDateFilterStart(null); setDateFilterEnd(null); }}
+              className="p-1.5 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white transition-all"
+              title="Clear date filter"
+            >
+              <FilterX size={14} />
+            </button>
+          )}
+        </div>
+      )}
       {(isAdmin || isPMA) && (
-        <button onClick={openNew} className="flex items-center gap-1 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 
-          px-3 py-1.5 rounded-lg font-bold text-white text-xs transition-all duration-300 shadow-md hover:-translate-y-0.5">
+        <button onClick={openNew} className="flex items-center gap-1 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 px-3 py-1.5 rounded-lg font-bold text-white text-xs transition-all duration-300 shadow-md hover:-translate-y-0.5">
           <Plus size={14} /> New
         </button>
       )}
       {isAdmin && (
-        <button onClick={() => setImportDialog(true)} className="flex items-center gap-1 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 
-          px-3 py-1.5 rounded-lg font-bold text-white text-xs transition-all duration-300 shadow-md hover:-translate-y-0.5">
+        <button onClick={() => setImportDialog(true)} className="flex items-center gap-1 bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 px-3 py-1.5 rounded-lg font-bold text-white text-xs transition-all duration-300 shadow-md hover:-translate-y-0.5">
           <Upload size={14} /> Import
         </button>
       )}
       {selectedRows.length > 0 && (
-        <button onClick={() => setBulkDialogVisible(true)} className="flex items-center gap-1 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 
-          px-3 py-1.5 rounded-lg font-bold text-white text-xs transition-all duration-300 shadow-md hover:-translate-y-0.5">
+        <button onClick={() => setBulkDialogVisible(true)} className="flex items-center gap-1 bg-gradient-to-r from-purple-600 to-purple-500 hover:from-purple-500 hover:to-purple-400 px-3 py-1.5 rounded-lg font-bold text-white text-xs transition-all duration-300 shadow-md hover:-translate-y-0.5">
           <Layers size={14} /> Bulk ({selectedRows.length})
         </button>
       )}
       {isAdmin && (
-        <button onClick={confirmDelete} disabled={selectedRows.length === 0} className="flex items-center gap-1 bg-gradient-to-r from-red-500 to-red-400 hover:from-red-400 hover:to-red-300 
-          px-3 py-1.5 rounded-lg font-bold text-white text-xs transition-all duration-300 shadow-md hover:-translate-y-0.5 disabled:opacity-50">
+        <button onClick={confirmDelete} disabled={selectedRows.length === 0} className="flex items-center gap-1 bg-gradient-to-r from-red-500 to-red-400 hover:from-red-400 hover:to-red-300 px-3 py-1.5 rounded-lg font-bold text-white text-xs transition-all duration-300 shadow-md hover:-translate-y-0.5 disabled:opacity-50">
           <Trash2 size={14} /> Del
         </button>
       )}
     </div>
-  ), [isAdmin, isPMA, openNew, selectedRows, confirmDelete, darkMode, hasData, globalFilter]);
+  ), [isAdmin, isPMA, openNew, selectedRows, confirmDelete, darkMode, hasData, dateFilterField, dateFilterStart, dateFilterEnd, dateFilterFieldOptions]);
 
   const toolbarRight = useMemo(() => (
     <div className="flex gap-2 items-center flex-wrap">
@@ -908,11 +1028,7 @@ const TrackerPage = () => {
       {isAdmin && (
         <MultiSelect value={hiddenColumns} options={allColumnDefs.filter(col => col.field !== 'selection' && col.field !== 'actions').map(col => ({ label: col.header, value: col.field }))} onChange={(e) => setHiddenColumns(e.value)} placeholder="Hide" className="max-w-[120px]" display="chip" />
       )}
-      <button 
-        onClick={() => setDarkMode(!darkMode)} 
-        className={`p-2 rounded-lg transition-all duration-300 border hover:-translate-y-0.5 ${darkMode ? 'bg-slate-800/80 border-slate-700 text-yellow-400' : 'bg-white/80 border-gray-200 text-slate-700'}`}
-        title="Toggle theme"
-      >
+      <button onClick={() => setDarkMode(!darkMode)} className={`p-2 rounded-lg transition-all duration-300 border hover:-translate-y-0.5 ${darkMode ? 'bg-slate-800/80 border-slate-700 text-yellow-400' : 'bg-white/80 border-gray-200 text-slate-700'}`}>
         {darkMode ? <Sun size={14} /> : <Moon size={14} />}
       </button>
     </div>
@@ -962,11 +1078,7 @@ const TrackerPage = () => {
       {hasData && (
         <>
           {sidebarOpen && <div className="fixed inset-0 bg-black/50 z-40" onClick={() => setSidebarOpen(false)} />}
-          <aside className={`fixed top-0 left-0 z-50 w-[260px] h-full flex flex-col justify-between transition-transform duration-500 ease-out transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} 
-            ${darkMode 
-              ? 'bg-white/5 backdrop-blur-2xl border-r border-white/10 shadow-[0_25px_50px_rgba(0,0,0,0.5)]' 
-              : 'bg-white/80 backdrop-blur-xl border-r border-gray-200/80 shadow-[0_25px_50px_rgba(0,0,0,0.15)]'}
-            rounded-r-3xl overflow-hidden`}>
+          <aside className={`fixed top-0 left-0 z-50 w-[260px] h-full flex flex-col justify-between transition-transform duration-500 ease-out transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${darkMode ? 'bg-white/5 backdrop-blur-2xl border-r border-white/10 shadow-[0_25px_50px_rgba(0,0,0,0.5)]' : 'bg-white/80 backdrop-blur-xl border-r border-gray-200/80 shadow-[0_25px_50px_rgba(0,0,0,0.15)]'} rounded-r-3xl overflow-hidden`}>
             <div>
               <div className="p-6 pb-8 border-b border-transparent flex justify-between items-center">
                 <div className="flex items-center gap-3">
@@ -999,31 +1111,41 @@ const TrackerPage = () => {
           <Toolbar left={toolbarLeft} right={toolbarRight} className={`rounded-xl border-none shadow-[0_8px_30px_rgb(0,0,0,0.12)] ${darkMode ? 'bg-[#1e293b]' : 'bg-white'}`} />
         </div>
         <div className="flex-1 px-2 md:px-4 pb-2 overflow-hidden flex flex-col" style={{ minHeight: 0 }}>
-          <div className={`transition-all duration-300 rounded-2xl overflow-hidden flex-1 flex flex-col border 
-            ${darkMode 
-              ? 'bg-slate-800/80 backdrop-blur-md border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.5)] hover:shadow-[0_25px_70px_rgba(0,0,0,0.6)]' 
-              : 'bg-white/80 backdrop-blur-md border-gray-200/80 shadow-[0_20px_60px_rgba(0,0,0,0.1)] hover:shadow-[0_25px_70px_rgba(0,0,0,0.15)]'}
-            transform-gpu`}>
-            <DataTable 
-              value={filteredData} 
-              selection={selectedRows} 
-              onSelectionChange={(e) => setSelectedRows(e.value)} 
-              paginator rows={15} rowsPerPageOptions={[15, 30, 50]} 
-              filterDisplay="row" scrollable scrollHeight="flex" 
-              showGridlines resizableColumns columnResizeMode="expand" 
-              loading={loading} emptyMessage="No entries found." 
-              className={`p-datatable-sm p-datatable-gridlines whitespace-nowrap ${darkMode ? 'custom-dark-table' : ''}`} 
-              dataKey="_id" tableStyle={{ minWidth: '120rem' }} style={{ height: '100%' }} 
+          <div className={`transition-all duration-300 rounded-2xl overflow-hidden flex-1 flex flex-col border ${darkMode ? 'bg-slate-800/80 backdrop-blur-md border-white/10 shadow-[0_20px_60px_rgba(0,0,0,0.5)] hover:shadow-[0_25px_70px_rgba(0,0,0,0.6)]' : 'bg-white/80 backdrop-blur-md border-gray-200/80 shadow-[0_20px_60px_rgba(0,0,0,0.1)] hover:shadow-[0_25px_70px_rgba(0,0,0,0.15)]'} transform-gpu`}>
+            <DataTable
+              value={displayData}
+              selection={selectedRows}
+              onSelectionChange={(e) => setSelectedRows(e.value)}
+              paginator rows={15} rowsPerPageOptions={[15, 30, 50]}
+              filterDisplay="row" scrollable scrollHeight="flex"
+              showGridlines resizableColumns columnResizeMode="expand"
+              loading={loading} emptyMessage="No entries found."
+              className={`p-datatable-sm p-datatable-gridlines whitespace-nowrap ${darkMode ? 'custom-dark-table' : ''}`}
+              dataKey="_id" tableStyle={{ minWidth: '120rem' }} style={{ height: '100%' }}
               rowClassName={rowClassName}
-              globalFilter={globalFilter}
             >
               {visibleColumns.map(col => {
-                if (col.field === 'selection') return <Column key="sel" selectionMode="multiple" frozen alignFrozen="left" style={col.style} />;
-                if (col.field === 'actions') return <Column key="act" body={actionBodyTemplate} header="Edit" frozen alignFrozen="right" style={col.style} />;
-                const headerContent = renderHeader(col);
-                if (col.isStatus) return <Column key={col.field} field={col.field} header={headerContent} sortable filter body={createStatusBody(col.field)} style={{ ...col.style, width: '220px' }} />;
-                return <Column key={col.field} field={col.field} header={headerContent} sortable filter body={createClickableBody(col.field, col.isDate)} frozen={col.frozen} alignFrozen={col.frozen ? 'left' : undefined} style={{ ...col.style, ...columnStyle(col.field) }} />;
-              })}
+  if (col.field === 'selection') return <Column key="sel" selectionMode="multiple" frozen alignFrozen="left" style={col.style} />;
+  if (col.field === 'actions') return <Column key="act" body={actionBodyTemplate} header="Edit" frozen alignFrozen="right" style={col.style} />;
+  const headerContent = renderHeader(col);
+  return (
+    <Column
+      key={col.field}
+      field={col.field}
+      header={headerContent}
+      sortable
+      filter={col.filter}
+      filterPlaceholder={col.filterPlaceholder}
+      dataType={col.dataType}
+      body={col.isStatus ? createStatusBody(col.field) : createClickableBody(col.field, col.isDate)}
+      frozen={col.frozen}
+      alignFrozen={col.frozen ? 'left' : undefined}
+      style={{ ...col.style, ...columnStyle(col.field) }}
+      filterElement={col.filterElement}
+      filterFunction={col.filterFunction}
+    />
+  );
+})}
             </DataTable>
           </div>
         </div>
@@ -1251,7 +1373,7 @@ const TrackerPage = () => {
         </TabView>
       </Dialog>
 
-      {/* Import Dialog with Template Download */}
+      {/* Import Dialog */}
       <Dialog visible={importDialog} onHide={() => { setImportDialog(false); setImportFile(null); }} header="Import Excel" modal style={{ width: '450px' }} 
         className={`rounded-2xl ${darkMode ? '!bg-slate-900/80 !backdrop-blur-xl !border !border-white/10 !shadow-[0_30px_60px_rgba(0,0,0,0.7)]' : '!bg-white/90 !backdrop-blur-xl !shadow-[0_20px_50px_rgba(0,0,0,0.2)]'}`}>
         <div className="mt-4 space-y-4">
