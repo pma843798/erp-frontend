@@ -181,16 +181,9 @@ const Dashboard = () => {
     return `${d}/${m}/${y}`;
   };
 
-  const handleCardClick = (filterType, cardTitle) => {
-    const filteredEntries = filterEntriesByType(filterType, allStyles);
-    setModal({
-      open: true,
-      title: cardTitle,
-      filterType: filterType,
-      entries: filteredEntries,
-    });
-  };
-
+  const handleCardClick = (filterType) => {
+  navigate(`/tracker?filter=${filterType}`);
+};
   const closeModal = () => {
     setModal({ open: false, title: '', filterType: '', entries: [] });
   };
@@ -590,7 +583,7 @@ const Dashboard = () => {
             {cards.map((card) => (
               <div
                 key={card.id}
-                onClick={() => handleCardClick(card.id, card.title)}
+                onClick={() => handleCardClick(card.id)}
                 className={`group cursor-pointer rounded-2xl p-5 transition-all duration-200 border ${
                   darkMode
                     ? 'bg-gray-800/50 border-gray-700 hover:bg-gray-800'
