@@ -22,6 +22,8 @@ import {
   Search,
   RotateCcw,
   ChevronRight,
+  X,
+  ExternalLink,
 } from 'lucide-react';
 
 import api from '../services/api';
@@ -47,6 +49,13 @@ const activityNameMap = {
   priority: 'Priority',
 };
 
+const accentThemes = [
+  { name: 'Indigo', primary: 'indigo', class: 'indigo' },
+  { name: 'Emerald', primary: 'emerald', class: 'emerald' },
+  { name: 'Rose', primary: 'rose', class: 'rose' },
+  { name: 'Amber', primary: 'amber', class: 'amber' },
+];
+
 const Dashboard = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -60,6 +69,7 @@ const Dashboard = () => {
   const [updates, setUpdates] = useState([]);
   const [allStyles, setAllStyles] = useState([]);
   const [loadingUpdates, setLoadingUpdates] = useState(true);
+  const [allHistoryForStats, setAllHistoryForStats] = useState([]);
 
   const [filters, setFilters] = useState({
     styleNo: '',
@@ -74,9 +84,26 @@ const Dashboard = () => {
     return savedTheme ? savedTheme === 'dark' : false;
   });
 
+  const [accentColor, setAccentColor] = useState(() => {
+    return localStorage.getItem('accentColor') || 'indigo';
+  });
+
+  const [showColorPicker, setShowColorPicker] = useState(false);
+
+  const [modal, setModal] = useState({
+    open: false,
+    title: '',
+    filterType: '',
+    entries: [],
+  });
+
   useEffect(() => {
     localStorage.setItem('theme', darkMode ? 'dark' : 'light');
   }, [darkMode]);
+
+  useEffect(() => {
+    localStorage.setItem('accentColor', accentColor);
+  }, [accentColor]);
 
   const userRole = user?.role?.toLowerCase();
 
@@ -97,14 +124,14 @@ const Dashboard = () => {
         setStats(statsResponse.data);
         setAllStyles(allEntries);
 
-        const allHistory = [];
+        const fullHistory = [];
         allEntries.forEach(entry => {
           if (entry.history && Array.isArray(entry.history)) {
             entry.history.forEach(h => {
               const dateStr = h.changedAt || h.date;
               if (!dateStr) return;
 
-              allHistory.push({
+              fullHistory.push({
                 styleNo: entry.styleNo || '?',
                 catNo: entry.catNo || '',
                 activityName: h.field,
@@ -117,8 +144,9 @@ const Dashboard = () => {
           }
         });
 
-        allHistory.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
-        setUpdates(allHistory.slice(0, 50));
+        fullHistory.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+        setAllHistoryForStats(fullHistory);
+        setUpdates(fullHistory);
 
         let filledDates = 0;
         const totalDateFields = allEntries.length * 2;
@@ -153,8 +181,72 @@ const Dashboard = () => {
     return `${d}/${m}/${y}`;
   };
 
-  const handleCardClick = (filterType) => {
-    navigate(`/tracker?filter=${filterType}`);
+  const handleCardClick = (filterType, cardTitle) => {
+    const filteredEntries = filterEntriesByType(filterType, allStyles);
+    setModal({
+      open: true,
+      title: cardTitle,
+      filterType: filterType,
+      entries: filteredEntries,
+    });
+  };
+
+  const closeModal = () => {
+    setModal({ open: false, title: '', filterType: '', entries: [] });
+  };
+
+  const filterEntriesByType = (type, entries) => {
+    if (!entries || entries.length === 0) return [];
+
+    switch (type) {
+      case 'pending-labdip':
+        return entries.filter(e =>
+          e.labdipPlannedStatus &&
+          e.labdipPlannedStatus.toLowerCase().includes('pending')
+        );
+      case 'pending-photo':
+        return entries.filter(e =>
+          e.photoSamplePlannedStatus &&
+          e.photoSamplePlannedStatus.toLowerCase().includes('pending')
+        );
+      case 'pending-fpt':
+        return entries.filter(e =>
+          e.plannedFPTStatus &&
+          e.plannedFPTStatus.toLowerCase().includes('pending')
+        );
+      case 'pending-gpt':
+        return entries.filter(e =>
+          e.plannedGPTStatus &&
+          e.plannedGPTStatus.toLowerCase().includes('pending')
+        );
+      case 'pending-gsm':
+        return entries.filter(e =>
+          e.gsmColorLotsPlannedStatus &&
+          e.gsmColorLotsPlannedStatus.toLowerCase().includes('pending')
+        );
+      case 'approved':
+        return entries.filter(e =>
+          e.approvalStatus &&
+          e.approvalStatus.toLowerCase().includes('approved')
+        );
+      case 'delayed':
+        return entries.filter(e => {
+          if (e.delayed !== undefined) return e.delayed === true;
+          const today = new Date();
+          const fptDate = e.plannedFPT ? new Date(e.plannedFPT) : null;
+          const gptDate = e.plannedGPT ? new Date(e.plannedGPT) : null;
+          const isOverdue = (date) => date && date < today;
+          const notApproved = !e.approvalStatus?.toLowerCase().includes('approved');
+          return (isOverdue(fptDate) || isOverdue(gptDate)) && notApproved;
+        });
+      case 'urgent':
+        return entries.filter(e =>
+          e.priority &&
+          e.priority.toLowerCase().includes('urgent')
+        );
+      default:
+        return [];
+    }
   };
 
   const daysSince = (dateString) => {
@@ -171,13 +263,13 @@ const Dashboard = () => {
       if (filters.activity && update.activityName !== filters.activity) return false;
       if (filters.user && update.updatedBy !== filters.user) return false;
 
-      const updateDate = new Date(update.updatedAt).setHours(0,0,0,0);
+      const updateDate = new Date(update.updatedAt).setHours(0, 0, 0, 0);
       if (filters.startDate) {
-        const start = new Date(filters.startDate).setHours(0,0,0,0);
+        const start = new Date(filters.startDate).setHours(0, 0, 0, 0);
         if (updateDate < start) return false;
       }
       if (filters.endDate) {
-        const end = new Date(filters.endDate).setHours(23,59,59,999);
+        const end = new Date(filters.endDate).setHours(23, 59, 59, 999);
         if (updateDate > end) return false;
       }
       return true;
@@ -217,7 +309,7 @@ const Dashboard = () => {
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
     const updatedStyleNos = new Set(
-      updates
+      allHistoryForStats
         .filter(u => new Date(u.updatedAt) >= sevenDaysAgo)
         .map(u => u.styleNo)
     );
@@ -229,7 +321,7 @@ const Dashboard = () => {
     )];
 
     return allStyleNos.filter(styleNo => !updatedStyleNos.has(styleNo));
-  }, [updates, allStyles]);
+  }, [allHistoryForStats, allStyles]);
 
   const resetFilters = () => {
     setFilters({ styleNo: '', activity: '', user: '', startDate: '', endDate: '' });
@@ -242,11 +334,11 @@ const Dashboard = () => {
   const getStatusClass = (status) => {
     const lower = status?.toLowerCase() || '';
     if (lower.includes('approved') || lower.includes('completed'))
-      return 'bg-green-100 dark:bg-green-900/30 border-l-4 border-green-500';
+      return 'bg-green-50 border-l-4 border-green-500';
     if (lower.includes('pending'))
-      return 'bg-yellow-100 dark:bg-yellow-900/30 border-l-4 border-yellow-500';
+      return 'bg-yellow-50 border-l-4 border-yellow-500';
     if (lower.includes('delayed') || lower.includes('reject'))
-      return 'bg-red-100 dark:bg-red-900/30 border-l-4 border-red-500';
+      return 'bg-red-50 border-l-4 border-red-500';
     return '';
   };
 
@@ -259,135 +351,145 @@ const Dashboard = () => {
     [updates]
   );
 
-  // 🆕 NavItem now opens in new tab
-  const NavItem = ({ icon: Icon, label, path, active, openInNewTab = true }) => (
-    <a
-      href={path}
-      target={openInNewTab ? '_blank' : '_self'}
-      rel="noopener noreferrer"
-      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${
-        active
-          ? 'bg-[#0080ff] text-white shadow-md'
-          : darkMode
-          ? 'text-gray-400 hover:bg-white/5 hover:text-white'
-          : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-      }`}
-    >
-      <Icon size={20} />
-      {label}
-    </a>
-  );
+  const getAccentClasses = (type = 'bg') => {
+    const accents = {
+      indigo: { bg: 'bg-indigo-600', bgLight: 'bg-indigo-50', text: 'text-indigo-700', ring: 'ring-indigo-500' },
+      emerald: { bg: 'bg-emerald-600', bgLight: 'bg-emerald-50', text: 'text-emerald-700', ring: 'ring-emerald-500' },
+      rose: { bg: 'bg-rose-600', bgLight: 'bg-rose-50', text: 'text-rose-700', ring: 'ring-rose-500' },
+      amber: { bg: 'bg-amber-600', bgLight: 'bg-amber-50', text: 'text-amber-700', ring: 'ring-amber-500' },
+    };
+    return accents[accentColor] || accents.indigo;
+  };
+
+  const NavItem = ({ icon: Icon, label, path, active, openInNewTab = true }) => {
+    const accent = getAccentClasses();
+    return (
+      <a
+        href={path}
+        target={openInNewTab ? '_blank' : '_self'}
+        rel="noopener noreferrer"
+        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-all ${
+          active
+            ? `${darkMode ? 'bg-indigo-500/10' : accent.bgLight} ${accent.text} shadow-sm`
+            : darkMode
+            ? 'text-gray-400 hover:bg-white/5 hover:text-white'
+            : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+        }`}
+      >
+        <Icon size={20} />
+        <span className="flex-1">{label}</span>
+        {active && <div className={`w-1.5 h-1.5 rounded-full ${accent.bg}`}></div>}
+      </a>
+    );
+  };
 
   if (loading) {
     return (
-      <div
-        className={`min-h-screen flex items-center justify-center ${
-          darkMode ? 'bg-[#0f172a] text-white' : 'bg-[#f4f7fb] text-slate-900'
-        }`}
-      >
-        <div className="text-xl font-semibold animate-pulse">Loading Dashboard...</div>
+      <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-[#0f172a]' : 'bg-gray-50'}`}>
+        <div className="flex items-center gap-3">
+          <div className={`w-6 h-6 border-2 ${getAccentClasses().bg} border-t-transparent rounded-full animate-spin`}></div>
+          <span className={`text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Loading Dashboard...</span>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div
-        className={`min-h-screen flex items-center justify-center ${
-          darkMode ? 'bg-[#0f172a]' : 'bg-[#f4f7fb]'
-        }`}
-      >
-        <div className="text-center">
-          <AlertTriangle size={48} className="text-red-500 mx-auto mb-4" />
-          <div className="text-xl text-red-500 font-semibold mb-4">{error}</div>
+      <div className={`min-h-screen flex items-center justify-center ${darkMode ? 'bg-[#0f172a]' : 'bg-gray-50'}`}>
+        <div className="text-center max-w-md px-6">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+            <AlertTriangle size={32} className="text-red-500" />
+          </div>
+          <h3 className={`text-xl font-semibold mb-2 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Connection Error</h3>
+          <p className={`mb-6 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>{error}</p>
           <button
             onClick={() => window.location.reload()}
-            className="px-6 py-2 bg-[#0080ff] text-white rounded-xl hover:bg-blue-600 transition"
+            className={`px-6 py-3 ${getAccentClasses().bg} text-white rounded-xl hover:opacity-90 transition font-medium shadow-md`}
           >
-            Retry
+            Try Again
           </button>
         </div>
       </div>
     );
   }
 
-  const getCardStyles = (cardId, colorHint) => {
-    const baseDark = darkMode;
-    const colorMap = {
-      orange: { bg: 'from-orange-500/20 to-orange-800/30', border: 'border-orange-500/30', text: 'text-orange-300' },
-      blue: { bg: 'from-blue-500/20 to-blue-800/30', border: 'border-blue-500/30', text: 'text-blue-300' },
-      pink: { bg: 'from-pink-500/20 to-pink-800/30', border: 'border-pink-500/30', text: 'text-pink-300' },
-      purple: { bg: 'from-purple-500/20 to-purple-800/30', border: 'border-purple-500/30', text: 'text-purple-300' },
-      emerald: { bg: 'from-emerald-500/20 to-emerald-800/30', border: 'border-emerald-500/30', text: 'text-emerald-300' },
-      green: { bg: 'from-green-500/20 to-green-800/30', border: 'border-green-500/30', text: 'text-green-300' },
-      red: { bg: 'from-red-500/20 to-red-800/30', border: 'border-red-500/30', text: 'text-red-300' },
-    };
-    const lightMap = {
-      orange: { bg: 'from-orange-50 to-orange-100', border: 'border-orange-200', text: 'text-orange-700' },
-      blue: { bg: 'from-blue-50 to-blue-100', border: 'border-blue-200', text: 'text-blue-700' },
-      pink: { bg: 'from-pink-50 to-pink-100', border: 'border-pink-200', text: 'text-pink-700' },
-      purple: { bg: 'from-purple-50 to-purple-100', border: 'border-purple-200', text: 'text-purple-700' },
-      emerald: { bg: 'from-emerald-50 to-emerald-100', border: 'border-emerald-200', text: 'text-emerald-700' },
-      green: { bg: 'from-green-50 to-green-100', border: 'border-green-200', text: 'text-green-700' },
-      red: { bg: 'from-red-50 to-red-100', border: 'border-red-200', text: 'text-red-700' },
-    };
-    const style = baseDark ? colorMap[colorHint] : lightMap[colorHint];
-    return style || (baseDark ? colorMap.blue : lightMap.blue);
-  };
-
   const cards = [
-    { id: 'pending-labdip', title: 'Labdip Pending', value: stats?.pendingLabdip || 0, icon: <Clock3 size={22} />, color: 'orange' },
-    { id: 'pending-photo', title: 'Photo Sample Pending', value: stats?.pendingPhotoSample || 0, icon: <Camera size={22} />, color: 'blue' },
-    { id: 'pending-fpt', title: 'FPT Pending', value: stats?.pendingFPT || 0, icon: <TrendingUp size={22} />, color: 'pink' },
-    { id: 'pending-gpt', title: 'GPT Pending', value: stats?.pendingGPT || 0, icon: <TrendingUp size={22} />, color: 'purple' },
-    { id: 'pending-gsm', title: 'GSM/Color Pending', value: stats?.pendingGSM || 0, icon: <Palette size={22} />, color: 'emerald' },
-    { id: 'approved', title: 'Total Approved', value: stats?.totalApproved || 0, icon: <CheckCircle2 size={22} />, color: 'green' },
-    { id: 'delayed', title: 'Delayed', value: stats?.delayedEntries || 0, icon: <AlertTriangle size={22} />, color: 'red' },
-    { id: 'urgent', title: 'Urgent Priority', value: stats?.urgentCount || 0, icon: <AlertCircle size={22} />, color: 'red' },
+    { id: 'pending-labdip', title: 'Labdip Pending', value: stats?.pendingLabdip || 0, icon: Clock3, color: 'orange' },
+    { id: 'pending-photo', title: 'Photo Sample Pending', value: stats?.pendingPhotoSample || 0, icon: Camera, color: 'blue' },
+    { id: 'pending-fpt', title: 'FPT Pending', value: stats?.pendingFPT || 0, icon: TrendingUp, color: 'pink' },
+    { id: 'pending-gpt', title: 'GPT Pending', value: stats?.pendingGPT || 0, icon: TrendingUp, color: 'purple' },
+    { id: 'pending-gsm', title: 'GSM/Color Pending', value: stats?.pendingGSM || 0, icon: Palette, color: 'emerald' },
+    { id: 'approved', title: 'Total Approved', value: stats?.totalApproved || 0, icon: CheckCircle2, color: 'green' },
+    { id: 'delayed', title: 'Delayed', value: stats?.delayedEntries || 0, icon: AlertTriangle, color: 'red' },
+    { id: 'urgent', title: 'Urgent Priority', value: stats?.urgentCount || 0, icon: AlertCircle, color: 'red' },
   ];
 
+  const getCardIconStyles = (color) => {
+    const map = {
+      orange: 'bg-orange-100 text-orange-600',
+      blue: 'bg-blue-100 text-blue-600',
+      pink: 'bg-pink-100 text-pink-600',
+      purple: 'bg-purple-100 text-purple-600',
+      emerald: 'bg-emerald-100 text-emerald-600',
+      green: 'bg-green-100 text-green-600',
+      red: 'bg-red-100 text-red-600',
+    };
+    return map[color] || map.blue;
+  };
+
+  const accent = getAccentClasses();
+
+  const getStatusFieldForFilter = (filterType, entry) => {
+    switch (filterType) {
+      case 'pending-labdip': return entry.labdipPlannedStatus || '-';
+      case 'pending-photo': return entry.photoSamplePlannedStatus || '-';
+      case 'pending-fpt': return entry.plannedFPTStatus || '-';
+      case 'pending-gpt': return entry.plannedGPTStatus || '-';
+      case 'pending-gsm': return entry.gsmColorLotsPlannedStatus || '-';
+      case 'approved': return entry.approvalStatus || '-';
+      case 'delayed': return entry.delayed ? 'Delayed' : (entry.plannedFPT || entry.plannedGPT) ? 'Overdue' : '-';
+      case 'urgent': return entry.priority || '-';
+      default: return '-';
+    }
+  };
+
   return (
-    <div className={`flex h-screen w-full overflow-hidden ${darkMode ? 'bg-[#0f172a] text-white' : 'bg-[#f4f7fb] text-slate-900'}`}>
-      {/* SIDEBAR */}
-      <aside
-        className={`w-[260px] h-full flex flex-col justify-between border-r shrink-0 transition-all ${
-          darkMode ? 'bg-[#1e293b] border-gray-800' : 'bg-white border-gray-200 shadow-sm'
-        }`}
-      >
+    <div className={`flex h-screen w-full overflow-hidden ${darkMode ? 'bg-[#0f172a] text-white' : 'bg-gray-50 text-slate-900'}`}>
+      {/* ---------- SIDEBAR ---------- */}
+      <aside className={`w-[260px] h-full flex flex-col justify-between border-r shrink-0 transition-colors ${
+        darkMode ? 'bg-[#0f172a] border-gray-800' : 'bg-white border-gray-200'
+      }`}>
         <div>
-          <div className="p-6 pb-8 border-b border-transparent">
+          <div className="p-6 border-b border-transparent">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-[#00a2ff] flex items-center justify-center shadow-md text-white">
-                <Grid size={20} />
+              <div className={`w-10 h-10 rounded-xl ${accent.bg} flex items-center justify-center shadow-md`}>
+                <Grid size={20} className="text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-extrabold tracking-tight leading-none">PMA</h1>
-                <p className={`text-[11px] font-medium mt-1 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                  Dashboard Panel
-                </p>
+                <h1 className="text-lg font-bold tracking-tight">PMA</h1>
+                <p className={`text-[11px] font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>Dashboard</p>
               </div>
             </div>
           </div>
 
-          <div className="px-4 flex flex-col gap-2 mt-4">
+          <nav className="px-3 mt-4 space-y-1">
             <NavItem icon={LayoutDashboard} label="Dashboard" path="/dashboard" active={true} openInNewTab={false} />
             <NavItem icon={Database} label="All Entries" path="/tracker" active={false} />
             {user?.role === 'admin' && <NavItem icon={Users} label="Users" path="/users" active={false} />}
-          </div>
+          </nav>
         </div>
 
         <div className="p-4">
-          <div
-            className={`p-4 rounded-2xl mb-3 border ${
-              darkMode ? 'bg-white/5 border-white/10' : 'bg-white border-gray-100 shadow-sm'
-            }`}
-          >
+          <div className={`p-4 rounded-2xl mb-3 border ${
+            darkMode ? 'bg-white/5 border-white/10' : 'bg-gray-50 border-gray-200'
+          }`}>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-[#0080ff] text-white flex items-center justify-center font-bold text-lg">
+              <div className={`w-10 h-10 rounded-full ${accent.bg} text-white flex items-center justify-center font-bold text-lg`}>
                 {user?.name?.charAt(0).toUpperCase() || 'A'}
               </div>
               <div>
-                <p className="font-bold text-sm leading-tight">{user?.name || 'Admin'}</p>
+                <p className="font-bold text-sm">{user?.name || 'Admin'}</p>
                 <p className={`text-xs capitalize ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                   {user?.role || 'Admin'}
                 </p>
@@ -396,410 +498,457 @@ const Dashboard = () => {
           </div>
           <button
             onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl transition-all font-bold bg-[#f14646] text-white hover:bg-red-600 shadow-sm"
+            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-bold text-white bg-red-500 hover:bg-red-600 transition shadow-sm"
           >
             <LogOut size={18} /> Logout
           </button>
         </div>
       </aside>
 
-      {/* MAIN CONTENT */}
+      {/* ---------- MAIN CONTENT ---------- */}
       <main className="flex-1 flex flex-col h-full overflow-hidden">
-        <header
-          className={`px-4 md:px-8 py-4 md:py-6 flex justify-between items-start shrink-0 border-b ${
-            darkMode ? 'border-gray-800' : 'border-gray-200'
-          }`}
-        >
+        <header className={`px-6 md:px-8 py-5 flex items-center justify-between shrink-0 border-b ${
+          darkMode ? 'border-gray-800' : 'border-gray-200'
+        }`}>
           <div>
-            <h2 className="text-2xl font-extrabold flex items-center gap-2 capitalize">
+            <h2 className="text-2xl font-bold flex items-center gap-2">
               {greeting}, {user?.name?.split(' ')[0] || 'Admin'}!
             </h2>
-            <p className={`mt-1 text-sm font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+            <p className={`mt-1 text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
               Welcome back. Here's your production overview.
             </p>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            {/* Color theme picker */}
+            <div className="relative">
+              <button
+                onClick={() => setShowColorPicker(!showColorPicker)}
+                className={`w-10 h-10 rounded-xl flex items-center justify-center transition ${
+                  darkMode
+                    ? 'bg-gray-800 hover:bg-gray-700'
+                    : 'bg-white border border-gray-200 hover:bg-gray-50 shadow-sm'
+                }`}
+                title="Change accent color"
+              >
+                <Palette size={18} className={darkMode ? 'text-gray-300' : 'text-gray-600'} />
+              </button>
+              {showColorPicker && (
+                <div className={`absolute right-0 mt-2 p-3 rounded-xl border shadow-lg z-20 w-40 ${
+                  darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+                }`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold">Accent</span>
+                    <button onClick={() => setShowColorPicker(false)}>
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="flex gap-2">
+                    {accentThemes.map((theme) => (
+                      <button
+                        key={theme.class}
+                        onClick={() => {
+                          setAccentColor(theme.primary);
+                          setShowColorPicker(false);
+                        }}
+                        className={`w-8 h-8 rounded-full bg-${theme.primary}-500 hover:ring-2 ring-offset-2 transition ${
+                          accentColor === theme.primary ? 'ring-2 ring-offset-2' : ''
+                        }`}
+                        title={theme.name}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <button
               onClick={() => setDarkMode(!darkMode)}
-              className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all shadow-sm ${
+              className={`w-10 h-10 rounded-xl flex items-center justify-center transition ${
                 darkMode
-                  ? 'bg-[#0080ff] text-white'
-                  : 'bg-[#00a2ff] text-white hover:bg-blue-500'
+                  ? 'bg-gray-800 text-yellow-400 hover:bg-gray-700'
+                  : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 shadow-sm'
               }`}
             >
               {darkMode ? <Sun size={18} /> : <Moon size={18} />}
             </button>
 
-            <div
-              className={`px-4 py-2 rounded-xl flex flex-col shadow-sm border ${
-                darkMode ? 'bg-[#1e293b] border-gray-700' : 'bg-white border-gray-100'
-              }`}
-            >
-              <span className={`text-[9px] font-bold uppercase ${darkMode ? 'text-gray-400' : 'text-gray-400'}`}>
-                Today's Date
+            <div className={`px-4 py-2 rounded-xl text-sm border ${
+              darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200 shadow-sm'
+            }`}>
+              <span className={`block text-[10px] uppercase font-bold ${darkMode ? 'text-gray-400' : 'text-gray-400'}`}>
+                Today
               </span>
-              <span className="font-extrabold text-xs">{getTodayDate()}</span>
+              <span className="font-bold">{getTodayDate()}</span>
             </div>
           </div>
         </header>
 
-        {/* Scrollable content area – table will scroll naturally, all rows visible */}
-        <div className="flex-1 px-4 md:px-8 py-6 overflow-y-auto">
-          
-          {/* Stat Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
-            {cards.map((card, idx) => {
-              const styles = getCardStyles(card.id, card.color);
-              return (
-                <div
-                  key={idx}
-                  onClick={() => handleCardClick(card.id)}
-                  className={`relative group cursor-pointer rounded-2xl p-6 bg-gradient-to-br ${styles.bg} border backdrop-blur-sm transition-all duration-300 hover:scale-[1.02] hover:shadow-xl ${styles.border}`}
-                >
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p
-                        className={`text-sm font-semibold tracking-wide ${
-                          darkMode ? 'text-gray-300' : 'text-gray-600'
-                        }`}
-                      >
-                        {card.title}
-                      </p>
-                      <h2 className="text-4xl font-black mt-2 tracking-tight">{card.value}</h2>
-                    </div>
-                    <div
-                      className={`w-12 h-12 rounded-2xl flex items-center justify-center bg-white/20 backdrop-blur-sm border ${styles.border} ${styles.text}`}
-                    >
-                      {card.icon}
-                    </div>
+        <div className="flex-1 px-6 md:px-8 py-6 overflow-y-auto">
+          {/* STAT CARDS */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-10">
+            {cards.map((card) => (
+              <div
+                key={card.id}
+                onClick={() => handleCardClick(card.id, card.title)}
+                className={`group cursor-pointer rounded-2xl p-5 transition-all duration-200 border ${
+                  darkMode
+                    ? 'bg-gray-800/50 border-gray-700 hover:bg-gray-800'
+                    : 'bg-white border-gray-100 shadow-sm hover:shadow-md'
+                }`}
+              >
+                <div className="flex justify-between items-start mb-3">
+                  <div className={`p-2 rounded-xl ${getCardIconStyles(card.color)}`}>
+                    <card.icon size={18} />
                   </div>
-                  <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div className="w-6 h-6 rounded-full bg-white/30 flex items-center justify-center text-xs">
-                      →
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Quick Insights */}
-          <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div
-              className={`rounded-2xl p-5 border ${
-                darkMode ? 'bg-[#1e293b]/70 border-gray-800' : 'bg-white border-gray-100 shadow-sm'
-              }`}
-            >
-              <div className="flex items-center gap-3 mb-3">
-                <CalendarDays size={20} className={darkMode ? 'text-cyan-400' : 'text-blue-500'} />
-                <h3 className="font-bold text-sm">Quick Insight</h3>
-              </div>
-              <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                Total styles: <span className="font-bold">{stats?.totalStyles || 0}</span>
-                <br />
-                Total Approved (any activity):{' '}
-                <span className="font-bold text-green-500">{stats?.totalApproved || 0}</span>
-                <br />
-                Delayed entries: <span className="font-bold text-red-500">{stats?.delayedEntries || 0}</span>
-              </p>
-            </div>
-            <div
-              className={`rounded-2xl p-5 border ${
-                darkMode ? 'bg-[#1e293b]/70 border-gray-800' : 'bg-white border-gray-100 shadow-sm'
-              }`}
-            >
-              <div className="flex items-center gap-3 mb-3">
-                <PieChart size={20} className={darkMode ? 'text-emerald-400' : 'text-emerald-600'} />
-                <h3 className="font-bold text-sm">Plan Date Fill Rate</h3>
-              </div>
-              <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-                FPT+GPT dates filled: <span className="font-bold">{completionRate.percent}%</span>
-                <br />
-                ({completionRate.filled}/{completionRate.total} fields)
-              </p>
-            </div>
-          </div>
-
-          {/* Latest Updates Section – admin/pma only */}
-          {(userRole === 'admin' || userRole === 'pma') && (
-            <>
-              <div className="mt-10 mb-8">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-3">
-                    <History size={24} className="text-[#0080ff]" />
-                    <h2 className="text-2xl font-extrabold">Latest Updates</h2>
-                  </div>
-                  <span className="text-sm text-gray-500 dark:text-gray-400">
-                    Showing {filteredUpdates.length} of {updates.length} recent changes
+                  <span className={`text-xs font-medium ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    {card.title}
                   </span>
                 </div>
+                <h3 className={`text-3xl font-bold ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                  {card.value}
+                </h3>
+                <div className={`mt-2 text-xs flex items-center gap-1 ${
+                  darkMode ? 'text-gray-500' : 'text-gray-400'
+                } group-hover:${accent.text} transition-colors`}>
+                  <span>View details</span>
+                  <ChevronRight size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
+              </div>
+            ))}
+          </div>
 
-                {/* Filters */}
+          {/* INSIGHT CARDS */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-10">
+            <div className={`rounded-2xl p-5 border ${
+              darkMode ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-100 shadow-sm'
+            }`}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 rounded-lg bg-blue-100">
+                  <CalendarDays size={18} className="text-blue-600" />
+                </div>
+                <h3 className="font-bold text-sm">Quick Insight</h3>
+              </div>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>Total styles</span>
+                  <span className="font-bold">{stats?.totalStyles || 0}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>Total Approved</span>
+                  <span className="font-bold text-green-600">{stats?.totalApproved || 0}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className={darkMode ? 'text-gray-400' : 'text-gray-600'}>Delayed entries</span>
+                  <span className="font-bold text-red-600">{stats?.delayedEntries || 0}</span>
+                </div>
+              </div>
+            </div>
+            <div className={`rounded-2xl p-5 border ${
+              darkMode ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-100 shadow-sm'
+            }`}>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 rounded-lg bg-emerald-100">
+                  <PieChart size={18} className="text-emerald-600" />
+                </div>
+                <h3 className="font-bold text-sm">Plan Date Fill Rate</h3>
+              </div>
+              <div className="flex items-end gap-2 mb-1">
+                <span className="text-3xl font-bold">{completionRate.percent}%</span>
+                <span className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  complete
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
                 <div
-                  className={`p-4 rounded-2xl mb-4 border ${
-                    darkMode ? 'bg-[#1e293b] border-gray-700' : 'bg-white border-gray-200 shadow-sm'
-                  }`}
-                >
-                  <div className="flex flex-wrap items-end gap-3">
-                    <div className="flex-1 min-w-[150px]">
-                      <label className="text-xs font-semibold uppercase mb-1 block text-gray-500 dark:text-gray-400">
-                        Style No
-                      </label>
+                  className="bg-emerald-500 h-2 rounded-full"
+                  style={{ width: `${completionRate.percent}%` }}
+                ></div>
+              </div>
+              <p className={`text-xs mt-2 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                {completionRate.filled} of {completionRate.total} FPT/GPT dates filled
+              </p>
+            </div>
+          </div>
+
+          {/* UPDATES TABLE (Admin/PMA only) */}
+          {(userRole === 'admin' || userRole === 'pma') && (
+            <>
+              <div className="mb-8">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2 rounded-lg ${darkMode ? 'bg-indigo-500/10' : accent.bgLight}`}>
+                      <History size={20} className={accent.text} />
+                    </div>
+                    <h2 className="text-xl font-bold">Change History</h2>
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                      darkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'
+                    }`}>
+                      {filteredUpdates.length} of {updates.length} changes
+                      {filteredUpdates.length !== updates.length && ' (filtered)'}
+                    </span>
+                  </div>
+                  {filters.styleNo || filters.activity || filters.user || filters.startDate || filters.endDate ? (
+                    <button
+                      onClick={resetFilters}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-100 hover:bg-gray-200 transition"
+                    >
+                      <RotateCcw size={12} /> Clear filters
+                    </button>
+                  ) : null}
+                </div>
+
+                {/* FILTERS */}
+                <div className={`p-4 rounded-2xl mb-5 border ${
+                  darkMode ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-200 shadow-sm'
+                }`}>
+                  <div className="flex flex-wrap items-end gap-4">
+                    <div className="flex-1 min-w-[160px]">
+                      <label className="block text-xs font-semibold uppercase mb-1.5 text-gray-500">Style No</label>
                       <div className="relative">
-                        <Search size={14} className="absolute left-3 top-2.5 text-gray-400" />
+                        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                         <input
                           type="text"
                           placeholder="Search..."
                           value={filters.styleNo}
                           onChange={(e) => setFilters({ ...filters, styleNo: e.target.value })}
-                          className={`w-full pl-9 pr-3 py-2 rounded-lg text-sm border ${
+                          className={`w-full pl-9 pr-3 py-2.5 rounded-xl text-sm border focus:ring-2 ${accent.ring} focus:border-transparent outline-none transition ${
                             darkMode
                               ? 'bg-gray-800 border-gray-600 text-white placeholder-gray-400'
-                              : 'bg-white border-gray-300'
+                              : 'bg-white border-gray-300 placeholder-gray-400'
                           }`}
                         />
                       </div>
                     </div>
-                    <div className="flex-1 min-w-[150px]">
-                      <label className="text-xs font-semibold uppercase mb-1 block text-gray-500 dark:text-gray-400">
-                        Activity
-                      </label>
+                    <div className="flex-1 min-w-[160px]">
+                      <label className="block text-xs font-semibold uppercase mb-1.5 text-gray-500">Activity</label>
                       <select
                         value={filters.activity}
                         onChange={(e) => setFilters({ ...filters, activity: e.target.value })}
-                        className={`w-full px-3 py-2 rounded-lg text-sm border ${
+                        className={`w-full px-3 py-2.5 rounded-xl text-sm border focus:ring-2 ${accent.ring} focus:border-transparent outline-none transition ${
                           darkMode ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300'
                         }`}
                       >
                         <option value="">All Activities</option>
                         {distinctActivities.map((act) => (
-                          <option key={act} value={act}>
-                            {act}
-                          </option>
+                          <option key={act} value={act}>{act}</option>
                         ))}
                       </select>
                     </div>
-                    <div className="flex-1 min-w-[150px]">
-                      <label className="text-xs font-semibold uppercase mb-1 block text-gray-500 dark:text-gray-400">
-                        User
-                      </label>
+                    <div className="flex-1 min-w-[160px]">
+                      <label className="block text-xs font-semibold uppercase mb-1.5 text-gray-500">User</label>
                       <select
                         value={filters.user}
                         onChange={(e) => setFilters({ ...filters, user: e.target.value })}
-                        className={`w-full px-3 py-2 rounded-lg text-sm border ${
+                        className={`w-full px-3 py-2.5 rounded-xl text-sm border focus:ring-2 ${accent.ring} focus:border-transparent outline-none transition ${
                           darkMode ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300'
                         }`}
                       >
                         <option value="">All Users</option>
                         {distinctUsers.map((u) => (
-                          <option key={u} value={u}>
-                            {u}
-                          </option>
+                          <option key={u} value={u}>{u}</option>
                         ))}
                       </select>
                     </div>
-                    <div className="flex-1 min-w-[150px]">
-                      <label className="text-xs font-semibold uppercase mb-1 block text-gray-500 dark:text-gray-400">
-                        From
-                      </label>
+                    <div className="flex-1 min-w-[140px]">
+                      <label className="block text-xs font-semibold uppercase mb-1.5 text-gray-500">From</label>
                       <input
                         type="date"
                         value={filters.startDate}
                         onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-                        className={`w-full px-3 py-2 rounded-lg text-sm border ${
+                        className={`w-full px-3 py-2.5 rounded-xl text-sm border focus:ring-2 ${accent.ring} focus:border-transparent outline-none transition ${
                           darkMode
-                            ? 'bg-gray-800 border-gray-600 text-white [&::-webkit-calendar-picker-indicator]:invert'
+                            ? 'bg-gray-800 border-gray-600 text-white [color-scheme:dark]'
                             : 'bg-white border-gray-300'
                         }`}
                       />
                     </div>
-                    <div className="flex-1 min-w-[150px]">
-                      <label className="text-xs font-semibold uppercase mb-1 block text-gray-500 dark:text-gray-400">
-                        To
-                      </label>
+                    <div className="flex-1 min-w-[140px]">
+                      <label className="block text-xs font-semibold uppercase mb-1.5 text-gray-500">To</label>
                       <input
                         type="date"
                         value={filters.endDate}
                         onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-                        className={`w-full px-3 py-2 rounded-lg text-sm border ${
+                        className={`w-full px-3 py-2.5 rounded-xl text-sm border focus:ring-2 ${accent.ring} focus:border-transparent outline-none transition ${
                           darkMode
-                            ? 'bg-gray-800 border-gray-600 text-white [&::-webkit-calendar-picker-indicator]:invert'
+                            ? 'bg-gray-800 border-gray-600 text-white [color-scheme:dark]'
                             : 'bg-white border-gray-300'
                         }`}
                       />
                     </div>
-                    <button
-                      onClick={resetFilters}
-                      className="flex items-center gap-1 px-4 py-2 rounded-lg text-sm font-medium bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 transition"
-                    >
-                      <RotateCcw size={14} /> Reset
-                    </button>
                   </div>
                 </div>
 
-                {/* Table wrapper */}
-                <div
-                  className={`rounded-2xl border overflow-x-auto shadow-sm ${
-                    darkMode ? 'bg-[#1e293b] border-gray-700' : 'bg-white border-gray-200'
-                  }`}
-                >
-                  <table className="w-full text-sm">
-                    <thead
-                      className={`${
+                {/* TABLE – FIXED TEXT VISIBILITY */}
+                <div className={`rounded-2xl border overflow-hidden shadow-sm ${
+                  darkMode ? 'border-gray-700' : 'border-gray-200'
+                }`}>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead className={`${
                         darkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-50 text-gray-600'
-                      }`}
-                    >
-                      <tr>
-                        <th className="p-3 text-left font-semibold">Style No</th>
-                        <th className="p-3 text-left font-semibold">CAT No</th>
-                        <th className="p-3 text-left font-semibold">Activity</th>
-                        <th className="p-3 text-left font-semibold">Previous Status</th>
-                        <th className="p-3 text-left font-semibold">New Status</th>
-                        <th className="p-3 text-left font-semibold">Updated By</th>
-                        <th className="p-3 text-left font-semibold">Updated At</th>
-                        <th className="p-3 text-left font-semibold">Days Since Update</th>
-                        <th className="p-3 text-left font-semibold">Days Since Last Style Update</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                      {filteredUpdates.length === 0 ? (
+                      }`}>
                         <tr>
-                          <td colSpan={9} className="p-6 text-center text-gray-500 dark:text-gray-400">
-                            No updates match the current filters.
-                          </td>
+                          <th className="px-4 py-3.5 text-left font-semibold whitespace-nowrap">Style No</th>
+                          <th className="px-4 py-3.5 text-left font-semibold whitespace-nowrap">CAT No</th>
+                          <th className="px-4 py-3.5 text-left font-semibold whitespace-nowrap">Activity</th>
+                          <th className="px-4 py-3.5 text-left font-semibold whitespace-nowrap">Previous</th>
+                          <th className="px-4 py-3.5 text-left font-semibold whitespace-nowrap">New Status</th>
+                          <th className="px-4 py-3.5 text-left font-semibold whitespace-nowrap">Updated By</th>
+                          <th className="px-4 py-3.5 text-left font-semibold whitespace-nowrap">Updated At</th>
+                          <th className="px-4 py-3.5 text-left font-semibold whitespace-nowrap">Days Ago</th>
+                          <th className="px-4 py-3.5 text-left font-semibold whitespace-nowrap">Last Update</th>
                         </tr>
-                      ) : (
-                        filteredUpdates.map((update, idx) => {
-                          const styleLatestDate = styleLatestUpdateMap[update.styleNo];
-                          const daysSinceStyleUpdate = styleLatestDate
-                            ? daysSince(styleLatestDate)
-                            : null;
-                          const daysSinceThisUpdate = daysSince(update.updatedAt);
-                          const statusClass = getStatusClass(update.newStatus);
-                          return (
-                            <tr
-                              key={idx}
-                              onClick={() => handleRowClick(update.styleNo)}
-                              className={`cursor-pointer transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20 ${statusClass}`}
-                            >
-                              <td className="p-3 font-medium">{update.styleNo}</td>
-                              <td className="p-3">{update.catNo || '-'}</td>
-                              <td className="p-3">{update.activityName}</td>
-                              <td className="p-3 text-gray-500 dark:text-gray-400">
-                                {update.previousStatus || '-'}
-                              </td>
-                              <td className="p-3 font-semibold">
-                                <span
-                                  className={`px-2 py-1 rounded-full text-xs font-bold ${
-                                    update.newStatus?.toLowerCase().includes('approved') ||
-                                    update.newStatus?.toLowerCase().includes('completed')
-                                      ? 'bg-green-100 text-green-800 dark:bg-green-800/30 dark:text-green-300'
-                                      : update.newStatus?.toLowerCase().includes('pending')
-                                      ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800/30 dark:text-yellow-300'
-                                      : update.newStatus?.toLowerCase().includes('delayed')
-                                      ? 'bg-red-100 text-red-800 dark:bg-red-800/30 dark:text-red-300'
-                                      : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                                  }`}
-                                >
-                                  {update.newStatus}
-                                </span>
-                              </td>
-                              <td className="p-3">{update.updatedBy}</td>
-                              <td className="p-3 whitespace-nowrap">
-                                {new Date(update.updatedAt).toLocaleDateString('en-GB', {
-                                  day: '2-digit',
-                                  month: 'short',
-                                  year: 'numeric',
-                                })}{' '}
-                                {new Date(update.updatedAt).toLocaleTimeString('en-US', {
-                                  hour: '2-digit',
-                                  minute: '2-digit',
-                                  hour12: true,
-                                })}
-                              </td>
-                              <td className="p-3">
-                                {daysSinceThisUpdate != null ? `${daysSinceThisUpdate} day(s)` : '-'}
-                              </td>
-                              <td className="p-3">
-                                {daysSinceStyleUpdate != null
-                                  ? `${daysSinceStyleUpdate} day(s)`
-                                  : '-'}
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                        {filteredUpdates.length === 0 ? (
+                          <tr>
+                            <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
+                              <div className="flex flex-col items-center gap-2">
+                                <Search size={20} className="opacity-50" />
+                                <span>No changes match your filters</span>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : (
+                          filteredUpdates.map((update, idx) => {
+                            const styleLatestDate = styleLatestUpdateMap[update.styleNo];
+                            const daysSinceStyleUpdate = styleLatestDate
+                              ? daysSince(styleLatestDate)
+                              : null;
+                            const daysSinceThisUpdate = daysSince(update.updatedAt);
+                            const statusClass = getStatusClass(update.newStatus);
+
+                            const getBadgeClass = (status) => {
+                              const s = status?.toLowerCase() || '';
+                              if (s.includes('approved') || s.includes('completed'))
+                                return 'bg-green-100 text-green-800';
+                              if (s.includes('pending'))
+                                return 'bg-yellow-100 text-yellow-800';
+                              if (s.includes('delayed') || s.includes('reject'))
+                                return 'bg-red-100 text-red-800';
+                              return 'bg-gray-100 text-gray-800';
+                            };
+
+                            return (
+                              <tr
+                                key={idx}
+                                onClick={() => handleRowClick(update.styleNo)}
+                                className={`cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-white/5 ${statusClass} ${
+                                  darkMode ? 'text-white' : 'text-gray-900'
+                                }`}
+                              >
+                                <td className={`px-4 py-3 font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>
+                                  {update.styleNo}
+                                </td>
+                                <td className={`px-4 py-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                  {update.catNo || '-'}
+                                </td>
+                                <td className={`px-4 py-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                  {update.activityName}
+                                </td>
+                                <td className={`px-4 py-3 ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                                  {update.previousStatus || '-'}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${getBadgeClass(update.newStatus)}`}>
+                                    {update.newStatus}
+                                  </span>
+                                </td>
+                                <td className={`px-4 py-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                  {update.updatedBy}
+                                </td>
+                                <td className={`px-4 py-3 whitespace-nowrap ${darkMode ? 'text-gray-400' : 'text-gray-600'}`}>
+                                  {new Date(update.updatedAt).toLocaleDateString('en-GB', {
+                                    day: '2-digit', month: 'short', year: 'numeric',
+                                  })}{' '}
+                                  {new Date(update.updatedAt).toLocaleTimeString('en-US', {
+                                    hour: '2-digit', minute: '2-digit', hour12: true,
+                                  })}
+                                </td>
+                                <td className={`px-4 py-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                  {daysSinceThisUpdate != null ? `${daysSinceThisUpdate}d` : '-'}
+                                </td>
+                                <td className={`px-4 py-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                                  {daysSinceStyleUpdate != null ? `${daysSinceStyleUpdate}d` : '-'}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className={`px-4 py-2 border-t text-xs font-medium flex items-center justify-between ${
+                    darkMode ? 'bg-gray-800/70 text-gray-400 border-gray-700' : 'bg-gray-50 text-gray-500 border-gray-200'
+                  }`}>
+                    <span>Showing {filteredUpdates.length} of {updates.length} changes</span>
+                    <span className="opacity-60">Click any row to view style history</span>
+                  </div>
                 </div>
               </div>
 
-              {/* Widgets Row */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                <div
-                  className={`rounded-2xl p-5 border ${
-                    darkMode ? 'bg-[#1e293b] border-gray-700' : 'bg-white border-gray-200 shadow-sm'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-4">
-                    <History size={20} className="text-blue-500" />
-                    <h3 className="font-bold text-base">Recently Updated Styles</h3>
+              {/* WIDGETS */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-8">
+                <div className={`rounded-2xl p-5 border ${
+                  darkMode ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-200 shadow-sm'
+                }`}>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 rounded-lg bg-blue-100">
+                      <History size={18} className="text-blue-600" />
+                    </div>
+                    <h3 className="font-bold text-base">Recently Updated</h3>
                   </div>
-                  <ul className="space-y-3">
-                    {recentlyUpdatedStyles.length === 0 ? (
-                      <li className="text-sm text-gray-500">No recent updates found.</li>
-                    ) : (
-                      recentlyUpdatedStyles.map((style, i) => (
+                  {recentlyUpdatedStyles.length === 0 ? (
+                    <p className="text-sm text-gray-500">No recent updates found.</p>
+                  ) : (
+                    <ul className="space-y-3">
+                      {recentlyUpdatedStyles.map((style, i) => (
                         <li key={i} className="flex justify-between items-center text-sm">
                           <div>
                             <span className="font-semibold">{style.styleNo}</span>
-                            <span className="text-gray-500 dark:text-gray-400 ml-2">
+                            <span className={`ml-2 ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                               ({activityNameMap[style.activity] || style.activity})
                             </span>
                           </div>
-                          <span className="text-gray-500 dark:text-gray-400">
-                            {daysSince(style.lastUpdate)}d ago
-                          </span>
+                          <span className={`${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>{daysSince(style.lastUpdate)}d ago</span>
                         </li>
-                      ))
-                    )}
-                  </ul>
+                      ))}
+                    </ul>
+                  )}
                   <button
                     onClick={() => navigate('/tracker')}
-                    className="mt-3 text-xs font-medium text-[#0080ff] hover:underline flex items-center gap-1"
+                    className={`mt-3 text-xs font-medium ${accent.text} hover:underline flex items-center gap-1`}
                   >
                     View all entries <ChevronRight size={14} />
                   </button>
                 </div>
 
-                <div
-                  className={`rounded-2xl p-5 border ${
-                    darkMode ? 'bg-[#1e293b] border-gray-700' : 'bg-white border-gray-200 shadow-sm'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 mb-4">
-                    <AlertCircle size={20} className="text-red-500" />
-                    <h3 className="font-bold text-base">No Updates in Last 7 Days</h3>
+                <div className={`rounded-2xl p-5 border ${
+                  darkMode ? 'bg-gray-800/50 border-gray-700' : 'bg-white border-gray-200 shadow-sm'
+                }`}>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="p-2 rounded-lg bg-red-100">
+                      <AlertCircle size={18} className="text-red-600" />
+                    </div>
+                    <h3 className="font-bold text-base">No Updates (7 days)</h3>
                   </div>
                   {stylesNoUpdate7Days.length === 0 ? (
-                    <p className="text-sm text-gray-500">All styles have recent updates. Good job!</p>
+                    <p className="text-sm text-gray-500">All styles have recent updates. 🎉</p>
                   ) : (
-                    <div className="max-h-40 overflow-y-auto">
-                      <div className="flex flex-wrap gap-2">
-                        {stylesNoUpdate7Days.map((styleNo, i) => (
-                          <span
-                            key={i}
-                            onClick={() => handleRowClick(styleNo)}
-                            className="cursor-pointer px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/50 transition"
-                          >
-                            {styleNo}
-                          </span>
-                        ))}
-                      </div>
+                    <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
+                      {stylesNoUpdate7Days.map((styleNo, i) => (
+                        <span
+                          key={i}
+                          onClick={() => handleRowClick(styleNo)}
+                          className="cursor-pointer px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700 hover:bg-red-200 transition"
+                        >
+                          {styleNo}
+                        </span>
+                      ))}
                     </div>
                   )}
-                  <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  <p className="mt-2 text-xs text-gray-500">
                     {stylesNoUpdate7Days.length} style(s) may need attention.
                   </p>
                 </div>
@@ -809,6 +958,116 @@ const Dashboard = () => {
         </div>
       </main>
 
+      {/* ---------- MODAL POPUP ---------- */}
+      {modal.open && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+          onClick={closeModal}
+        >
+          <div
+            className={`w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-2xl border overflow-hidden flex flex-col ${
+              darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className={`px-6 py-4 flex items-center justify-between border-b ${
+              darkMode ? 'border-gray-700' : 'border-gray-200'
+            }`}>
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${darkMode ? 'bg-indigo-500/10' : accent.bgLight}`}>
+                  <Database size={18} className={accent.text} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold">{modal.title}</h3>
+                  <p className="text-xs text-gray-500">{modal.entries.length} styles found</p>
+                </div>
+              </div>
+              <button
+                onClick={closeModal}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center transition ${
+                  darkMode ? 'hover:bg-gray-700 text-gray-400' : 'hover:bg-gray-100 text-gray-500'
+                }`}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Modal Body – Table */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {modal.entries.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-gray-500">
+                  <Search size={32} className="mb-3 opacity-50" />
+                  <p className="text-sm">No styles match this category</p>
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead className={`${
+                    darkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-50 text-gray-600'
+                  }`}>
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold">Style No</th>
+                      <th className="px-4 py-3 text-left font-semibold">CAT No</th>
+                      <th className="px-4 py-3 text-left font-semibold">Status</th>
+                      <th className="px-4 py-3 text-left font-semibold">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                    {modal.entries.map((entry, i) => {
+                      const statusValue = getStatusFieldForFilter(modal.filterType, entry);
+                      return (
+                        <tr key={i} className={`hover:bg-gray-50 dark:hover:bg-white/5 transition-colors ${
+                          darkMode ? 'text-white' : 'text-gray-900'
+                        }`}>
+                          <td className="px-4 py-3 font-medium">{entry.styleNo || '-'}</td>
+                          <td className={`px-4 py-3 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{entry.catNo || '-'}</td>
+                          <td className="px-4 py-3">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                              statusValue.toLowerCase().includes('pending') ? 'bg-yellow-100 text-yellow-800' :
+                              statusValue.toLowerCase().includes('approved') ? 'bg-green-100 text-green-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {statusValue}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={() => handleRowClick(entry.styleNo)}
+                              className={`text-xs font-medium ${accent.text} hover:underline flex items-center gap-1`}
+                            >
+                              <ExternalLink size={12} /> View
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className={`px-6 py-3 border-t flex justify-between items-center ${
+              darkMode ? 'border-gray-700' : 'border-gray-200'
+            }`}>
+              <span className="text-xs text-gray-500">
+                {modal.entries.length} {modal.entries.length === 1 ? 'style' : 'styles'} in this category
+              </span>
+              <button
+                onClick={() => {
+                  closeModal();
+                  navigate(`/tracker?filter=${modal.filterType}`);
+                }}
+                className={`px-4 py-2 rounded-xl text-sm font-medium text-white ${accent.bg} hover:opacity-90 transition shadow-sm`}
+              >
+                View All in Tracker
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Chat */}
       <AIChat />
     </div>
   );
