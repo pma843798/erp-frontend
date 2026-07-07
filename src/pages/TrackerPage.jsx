@@ -122,13 +122,13 @@ const parseExcelDate = (val) => {
   return null;
 };
 
-// ─── CUSTOM DATE FILTER COMPONENT (FIXED) ───
+// ─── CUSTOM DATE FILTER COMPONENT ───
 const DateColumnFilter = ({ value, filterApplyCallback }) => {
   return (
     <Calendar
       value={value ? new Date(value) : null}
       onChange={(e) => {
-        filterApplyCallback(e.value); // pass Date object or null
+        filterApplyCallback(e.value);
       }}
       dateFormat="dd/mm/yy"
       placeholder="Select date"
@@ -172,10 +172,21 @@ const TrackerPage = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedCatalog, setSelectedCatalog] = useState(null);
 
+  // --- Bulk Update State (new) ---
   const [bulkDialogVisible, setBulkDialogVisible] = useState(false);
+  const [bulkTab, setBulkTab] = useState('quick'); // 'quick' or 'excel'
   const [bulkUpdateField, setBulkUpdateField] = useState('');
   const [bulkUpdateValue, setBulkUpdateValue] = useState('');
+  const [bulkPreviewVisible, setBulkPreviewVisible] = useState(false);
+  const [bulkPreviewRows, setBulkPreviewRows] = useState([]);
 
+  const [bulkExcelFile, setBulkExcelFile] = useState(null);
+  const [bulkExcelImporting, setBulkExcelImporting] = useState(false);
+  const [bulkCatalogForExcel, setBulkCatalogForExcel] = useState(null);
+  const [bulkExcelPreviewVisible, setBulkExcelPreviewVisible] = useState(false);
+  const [bulkExcelPreviewData, setBulkExcelPreviewData] = useState([]);
+
+  // --- Import State ---
   const [importDialog, setImportDialog] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -318,7 +329,6 @@ const TrackerPage = () => {
 
   const filteredData = useMemo(() => {
     let result = data;
-    // Status filter from URL
     if (filter && filter !== 'all') {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -355,10 +365,8 @@ const TrackerPage = () => {
       }
     }
 
-    // Catalog filter
     if (selectedCatalog) result = result.filter(item => item.catNo === selectedCatalog);
 
-    // Global date range filter
     if (dateFilterField && (dateFilterStart || dateFilterEnd)) {
       const start = dateFilterStart ? new Date(dateFilterStart) : null;
       const end = dateFilterEnd ? new Date(dateFilterEnd) : null;
@@ -390,7 +398,6 @@ const TrackerPage = () => {
     return [...result].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
   }, [data, filter, selectedCatalog, dateFilterField, dateFilterStart, dateFilterEnd]);
 
-  // Convert date strings to Date objects for column filtering
   const displayData = useMemo(() => {
     return filteredData.map(item => {
       const newItem = { ...item };
@@ -458,49 +465,190 @@ const TrackerPage = () => {
     }
   }, [formData, isEditing, isVendor, cleanData, saveEntry, loadData]);
 
-  const bulkFieldOptions = useMemo(() => {
-    if (isAdmin) {
-      const dateOpts = allDateFields.map(f => ({ label: makeLabel(f), value: f }));
-      const statusOpts = statusFields.map(f => ({ label: makeLabel(f), value: f }));
-      const textOpts = textFields.map(f => ({ label: makeLabel(f), value: f }));
-      return [...dateOpts, ...statusOpts, ...textOpts];
-    }
-    if (isPMA) return statusFields.map(f => ({ label: makeLabel(f), value: f }));
-    if (isVendor) return plannedDateFields.map(f => ({ label: makeLabel(f), value: f }));
+  // --- Bulk Update Helpers ---
+  const getEditableFields = useCallback(() => {
+    if (isAdmin) return [...allDateFields, ...statusFields, 'remark'];
+    if (isPMA) return statusFields;
+    if (isVendor) return plannedDateFields;
     return [];
   }, [isAdmin, isPMA, isVendor]);
+
+  const bulkFieldOptions = useMemo(() => {
+    return getEditableFields().map(f => ({ label: makeLabel(f), value: f }));
+  }, [getEditableFields]);
 
   const getFieldType = (field) => {
     if (statusFields.includes(field)) return 'status';
     if (allDateFields.includes(field) || plannedDateFields.includes(field)) return 'date';
     if (textFields.includes(field)) return 'text';
-    if (field.toLowerCase().includes('status')) return 'status';
-    if (field.toLowerCase().includes('date') || field.toLowerCase().includes('due') || field.toLowerCase().includes('fob') || field.toLowerCase().includes('photo')) return 'date';
+    if (field?.toLowerCase().includes('status')) return 'status';
+    if (field?.toLowerCase().includes('date') || field?.toLowerCase().includes('due') || field?.toLowerCase().includes('fob') || field?.toLowerCase().includes('photo')) return 'date';
     return 'text';
   };
 
-  const handleBulkUpdateSubmit = async () => {
-    if (!bulkUpdateField || !bulkUpdateValue) {
-      toast.current.show({ severity: 'warn', summary: 'Validation', detail: 'Please select both field and value.', life: 3000 });
+  // --- Quick Bulk Update ---
+  const handleBulkPreview = useCallback(() => {
+    if (!bulkUpdateField || !bulkUpdateValue || selectedRows.length === 0) {
+      toast.current.show({ severity: 'warn', summary: 'Validation', detail: 'Select field, value and at least one row.', life: 3000 });
+      return;
+    }
+    const rows = selectedRows.map(row => ({
+      styleNo: row.styleNo,
+      catNo: row.catNo,
+      oldValue: row[bulkUpdateField],
+      newValue: bulkUpdateValue,
+      checked: true,
+      _id: row._id,
+    }));
+    setBulkPreviewRows(rows);
+    setBulkPreviewVisible(true);
+  }, [bulkUpdateField, bulkUpdateValue, selectedRows]);
+
+  const handleBulkApplyQuick = useCallback(async () => {
+    const toUpdate = bulkPreviewRows.filter(r => r.checked);
+    if (toUpdate.length === 0) {
+      toast.current.show({ severity: 'warn', summary: 'No rows', detail: 'No rows selected.', life: 3000 });
       return;
     }
     setLoading(true);
-    try {
-      const promises = selectedRows.map(row => api.put(`/tracker/${row._id}`, { [bulkUpdateField]: bulkUpdateValue }));
-      await Promise.all(promises);
-      toast.current.show({ severity: 'success', summary: 'Bulk Updated', detail: `Successfully updated ${selectedRows.length} records`, life: 2000 });
-      setBulkDialogVisible(false);
-      setSelectedRows([]);
-      setBulkUpdateField('');
-      setBulkUpdateValue('');
-      loadData();
-    } catch (err) {
-      toast.current.show({ severity: 'error', summary: 'Error', detail: 'Bulk update failed.', life: 3000 });
-    } finally {
-      setLoading(false);
+    let success = 0;
+    for (const row of toUpdate) {
+      try {
+        await api.put(`/tracker/${row._id}`, { [bulkUpdateField]: row.newValue });
+        success++;
+      } catch (err) {
+        console.error('Update failed for', row.styleNo, err);
+      }
     }
-  };
+    toast.current.show({ severity: 'success', summary: 'Updated', detail: `${success} of ${toUpdate.length} rows updated.`, life: 3000 });
+    setBulkPreviewVisible(false);
+    setBulkPreviewRows([]);
+    setBulkDialogVisible(false);
+    loadData();
+    setSelectedRows([]);
+    setLoading(false);
+  }, [bulkPreviewRows, bulkUpdateField, loadData]);
 
+  // --- Excel Bulk Update ---
+  const downloadBulkTemplate = useCallback(() => {
+    const catalog = bulkCatalogForExcel;
+    let rows = data;
+    if (catalog) rows = rows.filter(item => item.catNo === catalog);
+
+    const editableFields = getEditableFields();
+    const headers = ['Style No.', ...editableFields.map(f => makeLabel(f))];
+    const wsData = rows.map(row => {
+      const obj = { 'Style No.': row.styleNo };
+      editableFields.forEach(f => {
+        obj[makeLabel(f)] = row[f] ?? '';
+      });
+      return obj;
+    });
+    if (wsData.length === 0) {
+      toast.current.show({ severity: 'warn', summary: 'No data', detail: 'No records found for the selected catalog.', life: 3000 });
+      return;
+    }
+    const ws = XLSX.utils.json_to_sheet(wsData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'BulkUpdate');
+    XLSX.writeFile(wb, 'bulk_update_template.xlsx');
+    toast.current.show({ severity: 'success', summary: 'Template downloaded', detail: `${wsData.length} rows exported.`, life: 2000 });
+  }, [data, bulkCatalogForExcel, getEditableFields]);
+
+  const handleBulkExcelUpload = useCallback(async () => {
+    if (!bulkExcelFile) {
+      toast.current.show({ severity: 'warn', summary: 'No file', detail: 'Please select an Excel file.', life: 3000 });
+      return;
+    }
+    setBulkExcelImporting(true);
+    try {
+      const buffer = await bulkExcelFile.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: 'array' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const json = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+      if (json.length === 0) {
+        toast.current.show({ severity: 'warn', summary: 'Empty', detail: 'No rows found.', life: 3000 });
+        setBulkExcelImporting(false);
+        return;
+      }
+
+      const editableFields = getEditableFields();
+      const previewRows = [];
+      for (const row of json) {
+        const styleNo = row['Style No.']?.toString().trim();
+        if (!styleNo) continue;
+        const existing = data.find(d => d.styleNo === styleNo);
+        if (!existing) continue;
+        const changes = {};
+        let hasChange = false;
+        for (const field of editableFields) {
+          const header = makeLabel(field);
+          let newVal = row[header];
+          if (allDateFields.includes(field)) newVal = parseExcelDate(newVal);
+          const oldVal = existing[field] ?? null;
+          const oldStr = oldVal ? String(oldVal) : '';
+          const newStr = newVal ? String(newVal) : '';
+          if (oldStr !== newStr) {
+            changes[field] = { old: oldVal, new: newVal };
+            hasChange = true;
+          }
+        }
+        if (hasChange) {
+          previewRows.push({
+            styleNo,
+            catNo: existing.catNo,
+            _id: existing._id,
+            checked: true,
+            changes,
+          });
+        }
+      }
+      if (previewRows.length === 0) {
+        toast.current.show({ severity: 'info', summary: 'No changes', detail: 'No rows with changes found.', life: 3000 });
+        setBulkExcelImporting(false);
+        return;
+      }
+      setBulkExcelPreviewData(previewRows);
+      setBulkExcelPreviewVisible(true);
+      setBulkExcelFile(null);
+    } catch (err) {
+      toast.current.show({ severity: 'error', summary: 'Error', detail: 'Failed to parse file.', life: 4000 });
+    }
+    setBulkExcelImporting(false);
+  }, [bulkExcelFile, data, getEditableFields]);
+
+  const handleBulkExcelApply = useCallback(async () => {
+    const toUpdate = bulkExcelPreviewData.filter(r => r.checked);
+    if (toUpdate.length === 0) {
+      toast.current.show({ severity: 'warn', summary: 'No rows', detail: 'No rows selected.', life: 3000 });
+      return;
+    }
+    setLoading(true);
+    let success = 0;
+    for (const row of toUpdate) {
+      const payload = {};
+      for (const [field, change] of Object.entries(row.changes)) {
+        // Only send fields that are editable (already filtered)
+        payload[field] = change.new;
+      }
+      if (Object.keys(payload).length === 0) continue;
+      try {
+        await api.put(`/tracker/${row._id}`, payload);
+        success++;
+      } catch (err) {
+        console.error('Update failed for', row.styleNo, err);
+      }
+    }
+    toast.current.show({ severity: 'success', summary: 'Updated', detail: `${success} of ${toUpdate.length} rows updated.`, life: 3000 });
+    setBulkExcelPreviewVisible(false);
+    setBulkExcelPreviewData([]);
+    setBulkDialogVisible(false);
+    loadData();
+    setLoading(false);
+  }, [bulkExcelPreviewData, loadData]);
+
+  // --- Existing handlers ---
   const handleDeleteSelected = useCallback(async () => {
     if (selectedRows.length === 0) return;
     const ids = selectedRows.map(r => r._id).filter(id => id);
@@ -847,85 +995,86 @@ const TrackerPage = () => {
   const actionBodyTemplate = useCallback((rowData) => (
     <Button icon="pi pi-pencil" className={`p-button-rounded p-button-text ${darkMode ? '!text-cyan-400 hover:!bg-cyan-400/10' : '!text-blue-600 hover:!bg-blue-50'}`} onClick={() => openEdit(rowData)} />
   ), [darkMode, openEdit]);
-const allColumnDefs = useMemo(() => [
-  ...(isAdmin ? [{ field: 'selection', header: '', body: null, frozen: true, style: { width: '50px' } }] : []),
-  { field: 'catNo', header: 'CAT NO', frozen: true, style: { width: '160px' }, filter: true, filterPlaceholder: 'Search' },
-  { field: 'styleNo', header: 'Style No.', frozen: true, style: { width: '180px' }, filter: true, filterPlaceholder: 'Search' },
-  { field: 'styleName', header: 'Style Name', frozen: true, style: { width: '180px' }, filter: true, filterPlaceholder: 'Search' },
-  // ─── DATE COLUMNS WITH dataType: 'date' ───
-  { field: 'factoryFOB', header: 'Factory FOB', isDate: true, style: { width: '110px' }, 
-    filter: true, dataType: 'date',
-    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
-    filterFunction: dateFilterFunction,
-  },
-  { field: 'vendorPhotoShootDate', header: 'PhotoShoot Date', isDate: true, style: { width: '110px' }, 
-    filter: true, dataType: 'date',
-    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
-    filterFunction: dateFilterFunction,
-  },
-  { field: 'labdipQualityDeskloomDue', header: 'Labdip (Due Date)', isDate: true, style: { width: '110px' }, 
-    filter: true, dataType: 'date',
-    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
-    filterFunction: dateFilterFunction,
-  },
-  { field: 'labdipPlannedDate', header: 'Labdip (Planned Date)', isDate: true, style: { width: '110px' }, 
-    filter: true, dataType: 'date',
-    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
-    filterFunction: dateFilterFunction,
-  },
-  { field: 'labdipPlannedStatus', header: 'Labdip (Status)', isStatus: true, filter: true, filterPlaceholder: 'Search' },
-  { field: 'fabInHousePlannedDate', header: 'Fab in house (Planned date)', isDate: true, style: { width: '110px' }, 
-    filter: true, dataType: 'date',
-    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
-    filterFunction: dateFilterFunction,
-  },
-  { field: 'photoSampleDue', header: 'Photo Sample (Due Date)', isDate: true, style: { width: '110px' }, 
-    filter: true, dataType: 'date',
-    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
-    filterFunction: dateFilterFunction,
-  },
-  { field: 'photoSamplePlannedDate', header: 'Photo Sample (Planned Date)', isDate: true, style: { width: '110px' }, 
-    filter: true, dataType: 'date',
-    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
-    filterFunction: dateFilterFunction,
-  },
-  { field: 'photoSamplePlannedStatus', header: 'Photo Sample (Status)', isStatus: true, filter: true, filterPlaceholder: 'Search' },
-  { field: 'fptDueDate', header: 'FPT (Due)', isDate: true, style: { width: '110px' }, 
-    filter: true, dataType: 'date',
-    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
-    filterFunction: dateFilterFunction,
-  },
-  { field: 'plannedFPT', header: 'FPT (Planned Date)', isDate: true, style: { width: '110px' }, 
-    filter: true, dataType: 'date',
-    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
-    filterFunction: dateFilterFunction,
-  },
-  { field: 'plannedFPTStatus', header: 'FPT (Status)', isStatus: true, filter: true, filterPlaceholder: 'Search' },
-  { field: 'gptDueDate', header: 'GPT (Due)', isDate: true, style: { width: '110px' }, 
-    filter: true, dataType: 'date',
-    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
-    filterFunction: dateFilterFunction,
-  },
-  { field: 'plannedGPT', header: 'GPT (Planned Date)', isDate: true, style: { width: '110px' }, 
-    filter: true, dataType: 'date',
-    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
-    filterFunction: dateFilterFunction,
-  },
-  { field: 'plannedGPTStatus', header: 'GPT (Status)', isStatus: true, filter: true, filterPlaceholder: 'Search' },
-  { field: 'gsmColorLotsDue', header: 'Gsm/Color (Due Date)', isDate: true, style: { width: '110px' }, 
-    filter: true, dataType: 'date',
-    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
-    filterFunction: dateFilterFunction,
-  },
-  { field: 'gsmColorLotsPlanned', header: 'Gsm/Color (Planned Date)', isDate: true, style: { width: '110px' }, 
-    filter: true, dataType: 'date',
-    filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
-    filterFunction: dateFilterFunction,
-  },
-  { field: 'gsmColorLotsPlannedStatus', header: 'Gsm/Color (Status)', isStatus: true, filter: true, filterPlaceholder: 'Search' },
-  { field: 'remark', header: 'Remark', filter: true, filterPlaceholder: 'Search' },
-  { field: 'actions', header: 'Edit', frozen: true, style: { width: '80px' } }
-], [isAdmin]);
+
+  const allColumnDefs = useMemo(() => [
+    ...(isAdmin ? [{ field: 'selection', header: '', body: null, frozen: true, style: { width: '50px' } }] : []),
+    { field: 'catNo', header: 'CAT NO', frozen: true, style: { width: '160px' }, filter: true, filterPlaceholder: 'Search' },
+    { field: 'styleNo', header: 'Style No.', frozen: true, style: { width: '180px' }, filter: true, filterPlaceholder: 'Search' },
+    { field: 'styleName', header: 'Style Name', frozen: true, style: { width: '180px' }, filter: true, filterPlaceholder: 'Search' },
+    // ─── DATE COLUMNS WITH dataType: 'date' ───
+    { field: 'factoryFOB', header: 'Factory FOB', isDate: true, style: { width: '110px' }, 
+      filter: true, dataType: 'date',
+      filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+      filterFunction: dateFilterFunction,
+    },
+    { field: 'vendorPhotoShootDate', header: 'PhotoShoot Date', isDate: true, style: { width: '110px' }, 
+      filter: true, dataType: 'date',
+      filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+      filterFunction: dateFilterFunction,
+    },
+    { field: 'labdipQualityDeskloomDue', header: 'Labdip (Due Date)', isDate: true, style: { width: '110px' }, 
+      filter: true, dataType: 'date',
+      filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+      filterFunction: dateFilterFunction,
+    },
+    { field: 'labdipPlannedDate', header: 'Labdip (Planned Date)', isDate: true, style: { width: '110px' }, 
+      filter: true, dataType: 'date',
+      filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+      filterFunction: dateFilterFunction,
+    },
+    { field: 'labdipPlannedStatus', header: 'Labdip (Status)', isStatus: true, filter: true, filterPlaceholder: 'Search' },
+    { field: 'fabInHousePlannedDate', header: 'Fab in house (Planned date)', isDate: true, style: { width: '110px' }, 
+      filter: true, dataType: 'date',
+      filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+      filterFunction: dateFilterFunction,
+    },
+    { field: 'photoSampleDue', header: 'Photo Sample (Due Date)', isDate: true, style: { width: '110px' }, 
+      filter: true, dataType: 'date',
+      filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+      filterFunction: dateFilterFunction,
+    },
+    { field: 'photoSamplePlannedDate', header: 'Photo Sample (Planned Date)', isDate: true, style: { width: '110px' }, 
+      filter: true, dataType: 'date',
+      filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+      filterFunction: dateFilterFunction,
+    },
+    { field: 'photoSamplePlannedStatus', header: 'Photo Sample (Status)', isStatus: true, filter: true, filterPlaceholder: 'Search' },
+    { field: 'fptDueDate', header: 'FPT (Due)', isDate: true, style: { width: '110px' }, 
+      filter: true, dataType: 'date',
+      filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+      filterFunction: dateFilterFunction,
+    },
+    { field: 'plannedFPT', header: 'FPT (Planned Date)', isDate: true, style: { width: '110px' }, 
+      filter: true, dataType: 'date',
+      filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+      filterFunction: dateFilterFunction,
+    },
+    { field: 'plannedFPTStatus', header: 'FPT (Status)', isStatus: true, filter: true, filterPlaceholder: 'Search' },
+    { field: 'gptDueDate', header: 'GPT (Due)', isDate: true, style: { width: '110px' }, 
+      filter: true, dataType: 'date',
+      filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+      filterFunction: dateFilterFunction,
+    },
+    { field: 'plannedGPT', header: 'GPT (Planned Date)', isDate: true, style: { width: '110px' }, 
+      filter: true, dataType: 'date',
+      filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+      filterFunction: dateFilterFunction,
+    },
+    { field: 'plannedGPTStatus', header: 'GPT (Status)', isStatus: true, filter: true, filterPlaceholder: 'Search' },
+    { field: 'gsmColorLotsDue', header: 'Gsm/Color (Due Date)', isDate: true, style: { width: '110px' }, 
+      filter: true, dataType: 'date',
+      filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+      filterFunction: dateFilterFunction,
+    },
+    { field: 'gsmColorLotsPlanned', header: 'Gsm/Color (Planned Date)', isDate: true, style: { width: '110px' }, 
+      filter: true, dataType: 'date',
+      filterElement: (options) => <DateColumnFilter value={options.value} filterApplyCallback={options.filterApplyCallback} />,
+      filterFunction: dateFilterFunction,
+    },
+    { field: 'gsmColorLotsPlannedStatus', header: 'Gsm/Color (Status)', isStatus: true, filter: true, filterPlaceholder: 'Search' },
+    { field: 'remark', header: 'Remark', filter: true, filterPlaceholder: 'Search' },
+    { field: 'actions', header: 'Edit', frozen: true, style: { width: '80px' } }
+  ], [isAdmin]);
 
   const visibleColumns = useMemo(() => allColumnDefs.filter(col => !hiddenColumns.includes(col.field)), [allColumnDefs, hiddenColumns]);
 
@@ -1125,64 +1274,338 @@ const allColumnDefs = useMemo(() => [
               rowClassName={rowClassName}
             >
               {visibleColumns.map(col => {
-  if (col.field === 'selection') return <Column key="sel" selectionMode="multiple" frozen alignFrozen="left" style={col.style} />;
-  if (col.field === 'actions') return <Column key="act" body={actionBodyTemplate} header="Edit" frozen alignFrozen="right" style={col.style} />;
-  const headerContent = renderHeader(col);
-  return (
-    <Column
-      key={col.field}
-      field={col.field}
-      header={headerContent}
-      sortable
-      filter={col.filter}
-      filterPlaceholder={col.filterPlaceholder}
-      dataType={col.dataType}
-      body={col.isStatus ? createStatusBody(col.field) : createClickableBody(col.field, col.isDate)}
-      frozen={col.frozen}
-      alignFrozen={col.frozen ? 'left' : undefined}
-      style={{ ...col.style, ...columnStyle(col.field) }}
-      filterElement={col.filterElement}
-      filterFunction={col.filterFunction}
-    />
-  );
-})}
+                if (col.field === 'selection') return <Column key="sel" selectionMode="multiple" frozen alignFrozen="left" style={col.style} />;
+                if (col.field === 'actions') return <Column key="act" body={actionBodyTemplate} header="Edit" frozen alignFrozen="right" style={col.style} />;
+                const headerContent = renderHeader(col);
+                return (
+                  <Column
+                    key={col.field}
+                    field={col.field}
+                    header={headerContent}
+                    sortable
+                    filter={col.filter}
+                    filterPlaceholder={col.filterPlaceholder}
+                    dataType={col.dataType}
+                    body={col.isStatus ? createStatusBody(col.field) : createClickableBody(col.field, col.isDate)}
+                    frozen={col.frozen}
+                    alignFrozen={col.frozen ? 'left' : undefined}
+                    style={{ ...col.style, ...columnStyle(col.field) }}
+                    filterElement={col.filterElement}
+                    filterFunction={col.filterFunction}
+                  />
+                );
+              })}
             </DataTable>
           </div>
         </div>
       </main>
 
-      {/* Bulk Update Dialog */}
-      <Dialog visible={bulkDialogVisible} style={{ width: '450px' }} header="Bulk Update" modal 
+      {/* ======================== BULK UPDATE DIALOG (with Tabs) ======================== */}
+      <Dialog
+        visible={bulkDialogVisible}
+        header="Bulk Update"
+        style={{ width: '650px' }}
         className={`rounded-2xl ${darkMode ? '!bg-slate-900/80 !backdrop-blur-xl !border !border-white/10 !shadow-[0_30px_60px_rgba(0,0,0,0.7)]' : '!bg-white/90 !backdrop-blur-xl !shadow-[0_20px_50px_rgba(0,0,0,0.2)]'}`}
-        onHide={() => { setBulkDialogVisible(false); setBulkUpdateField(''); setBulkUpdateValue(''); }}>
-        <div className="mt-4 space-y-4">
-          <p className="text-sm opacity-80">You have selected <b>{selectedRows.length}</b> records.</p>
-          {bulkFieldOptions.length === 0 ? (
-            <div className="text-red-500 text-sm">No fields available for bulk update for your role.</div>
-          ) : (
-            <>
+        onHide={() => { setBulkDialogVisible(false); setBulkUpdateField(''); setBulkUpdateValue(''); setBulkExcelFile(null); }}
+      >
+        <TabView activeIndex={bulkTab === 'quick' ? 0 : 1} onTabChange={(e) => setBulkTab(e.index === 0 ? 'quick' : 'excel')}>
+          {/* ---------- QUICK UPDATE TAB ---------- */}
+          <TabPanel header="Quick Update">
+            <div className="space-y-4 mt-2">
+              <p className="text-sm opacity-80">
+                {selectedRows.length > 0
+                  ? `You have selected ${selectedRows.length} records.`
+                  : 'Select rows in the main table first, or use catalog filter below.'}
+              </p>
               <div>
-                <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Select Field</label>
-                <Dropdown value={bulkUpdateField} options={bulkFieldOptions} onChange={(e) => { setBulkUpdateField(e.value); setBulkUpdateValue(''); }} placeholder="Choose a field" className="w-full" />
+                <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Field</label>
+                <Dropdown
+                  value={bulkUpdateField}
+                  options={bulkFieldOptions}
+                  onChange={(e) => { setBulkUpdateField(e.value); setBulkUpdateValue(''); }}
+                  placeholder="Choose a field"
+                  className="w-full"
+                />
               </div>
               <div>
-                <label className={`block text-sm font-medium mb-2 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>
-                  {getFieldType(bulkUpdateField) === 'date' ? 'Select Date' : getFieldType(bulkUpdateField) === 'status' ? 'Select Status' : 'Enter Value'}
+                <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>
+                  {getFieldType(bulkUpdateField) === 'date' ? 'Date' : getFieldType(bulkUpdateField) === 'status' ? 'Status' : 'Value'}
                 </label>
                 {getFieldType(bulkUpdateField) === 'date' ? (
-                  <Calendar value={bulkUpdateValue ? new Date(bulkUpdateValue) : null} onChange={(e) => setBulkUpdateValue(dateToStr(e.value))} dateFormat="dd/mm/yy" showIcon className="w-full" inputClassName={`p-2 text-sm rounded-lg w-full ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`} placeholder="Pick a date" />
+                  <Calendar
+                    value={bulkUpdateValue ? new Date(bulkUpdateValue) : null}
+                    onChange={(e) => setBulkUpdateValue(dateToStr(e.value))}
+                    dateFormat="dd/mm/yy"
+                    showIcon
+                    className="w-full"
+                    inputClassName={`p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`}
+                  />
                 ) : getFieldType(bulkUpdateField) === 'status' ? (
-                  <Dropdown value={bulkUpdateValue || 'Pending'} options={statusOptions} onChange={(e) => setBulkUpdateValue(e.value)} placeholder="Choose status" className="w-full" />
+                  <Dropdown
+                    value={bulkUpdateValue || ''}
+                    options={statusOptions}
+                    onChange={(e) => setBulkUpdateValue(e.value)}
+                    placeholder="Select status"
+                    className="w-full"
+                  />
                 ) : (
-                  <InputText value={bulkUpdateValue} onChange={(e) => setBulkUpdateValue(e.target.value)} placeholder="Enter value" className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`} />
+                  <InputText
+                    value={bulkUpdateValue}
+                    onChange={(e) => setBulkUpdateValue(e.target.value)}
+                    placeholder="Enter value"
+                    className={`w-full p-2 text-sm rounded-lg ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`}
+                  />
                 )}
               </div>
               <div className="flex gap-3 pt-2">
-                <button onClick={() => { setBulkDialogVisible(false); setBulkUpdateField(''); setBulkUpdateValue(''); }} className="w-1/2 border py-2.5 rounded-xl font-bold transition-all hover:bg-gray-100 dark:hover:bg-slate-800">Cancel</button>
-                <button onClick={handleBulkUpdateSubmit} disabled={!bulkUpdateField || !bulkUpdateValue || bulkFieldOptions.length === 0} className="w-1/2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white py-2.5 rounded-xl font-bold shadow-lg transition-all">Apply</button>
+                <button
+                  onClick={() => { setBulkDialogVisible(false); setBulkUpdateField(''); setBulkUpdateValue(''); }}
+                  className="w-1/2 border py-2.5 rounded-xl font-bold transition-all hover:bg-gray-100 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleBulkPreview}
+                  disabled={!bulkUpdateField || !bulkUpdateValue || selectedRows.length === 0}
+                  className="w-1/2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white py-2.5 rounded-xl font-bold shadow-lg transition-all"
+                >
+                  Preview Changes
+                </button>
               </div>
-            </>
-          )}
+            </div>
+          </TabPanel>
+
+          {/* ---------- EXCEL UPLOAD TAB ---------- */}
+          <TabPanel header="Excel Upload">
+            <div className="space-y-4 mt-2">
+              <div>
+                <label className={`block text-sm font-medium mb-1 ${darkMode ? 'text-gray-300' : 'text-slate-700'}`}>Catalog (optional)</label>
+                <Dropdown
+                  value={bulkCatalogForExcel}
+                  options={catalogOptions}
+                  onChange={(e) => setBulkCatalogForExcel(e.value)}
+                  placeholder="All Catalogs"
+                  showClear
+                  className="w-full"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={downloadBulkTemplate}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 transition"
+                >
+                  <Download size={14} /> Download Template
+                </button>
+                <button
+                  onClick={() => document.getElementById('bulkExcelInput')?.click()}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold bg-green-600 text-white hover:bg-green-700 transition"
+                >
+                  <Upload size={14} /> Choose File
+                </button>
+                <input
+                  id="bulkExcelInput"
+                  type="file"
+                  accept=".xlsx"
+                  className="hidden"
+                  onChange={(e) => {
+                    setBulkExcelFile(e.target.files[0]);
+                    toast.current.show({ severity: 'info', summary: 'File selected', detail: e.target.files[0]?.name, life: 2000 });
+                  }}
+                />
+              </div>
+              {bulkExcelFile && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="truncate">{bulkExcelFile.name}</span>
+                  <button
+                    onClick={() => setBulkExcelFile(null)}
+                    className="text-red-500 hover:text-red-700"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+              <button
+                onClick={handleBulkExcelUpload}
+                disabled={!bulkExcelFile || bulkExcelImporting}
+                className="w-full bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white py-2.5 rounded-xl font-bold shadow-lg transition-all"
+              >
+                {bulkExcelImporting ? 'Processing...' : 'Upload & Preview'}
+              </button>
+            </div>
+          </TabPanel>
+        </TabView>
+      </Dialog>
+
+      {/* ======================== PREVIEW DIALOG (Quick Update) ======================== */}
+      <Dialog
+        visible={bulkPreviewVisible}
+        header="Confirm Bulk Updates – Quick"
+        style={{ width: '90%', maxWidth: '1200px' }}
+        className={`rounded-2xl ${darkMode ? '!bg-slate-900/80 !backdrop-blur-xl !border !border-white/10 !shadow-[0_30px_60px_rgba(0,0,0,0.7)]' : '!bg-white/90 !backdrop-blur-xl !shadow-[0_20px_50px_rgba(0,0,0,0.2)]'}`}
+        onHide={() => setBulkPreviewVisible(false)}
+      >
+        <div className="mt-2">
+          <div className="flex justify-between items-center mb-3">
+            <div className="text-sm">
+              <span className="font-bold">{bulkPreviewRows.filter(r => r.checked).length}</span> of {bulkPreviewRows.length} rows selected.
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                inputId="selectAllPreview"
+                checked={bulkPreviewRows.every(r => r.checked)}
+                onChange={(e) => {
+                  const checked = e.checked;
+                  setBulkPreviewRows(prev => prev.map(r => ({ ...r, checked })));
+                }}
+              />
+              <label htmlFor="selectAllPreview" className="text-sm">Select All</label>
+            </div>
+          </div>
+
+          <DataTable
+            value={bulkPreviewRows}
+            paginator={bulkPreviewRows.length > 20}
+            rows={20}
+            scrollable
+            scrollHeight="500px"
+            className="text-sm"
+          >
+            <Column
+              header="Apply"
+              body={(rowData) => (
+                <Checkbox
+                  checked={rowData.checked}
+                  onChange={(e) => {
+                    const val = e.checked;
+                    setBulkPreviewRows(prev => prev.map(r =>
+                      r.styleNo === rowData.styleNo ? { ...r, checked: val } : r
+                    ));
+                  }}
+                />
+              )}
+              style={{ width: '70px' }}
+            />
+            <Column field="styleNo" header="Style No." frozen style={{ minWidth: '140px' }} />
+            <Column field="catNo" header="CAT NO" style={{ minWidth: '120px' }} />
+            <Column
+              header="Old Value"
+              body={(row) => {
+                const val = row.oldValue;
+                return getFieldType(bulkUpdateField) === 'date' ? formatDate(val) : String(val ?? '-');
+              }}
+            />
+            <Column
+              header="New Value"
+              body={(row) => {
+                const val = row.newValue;
+                return getFieldType(bulkUpdateField) === 'date' ? formatDate(val) : String(val ?? '-');
+              }}
+            />
+          </DataTable>
+
+          <div className="flex justify-end gap-3 mt-4">
+            <button onClick={() => setBulkPreviewVisible(false)} className="px-4 py-2 border rounded">Cancel</button>
+            <button
+              onClick={handleBulkApplyQuick}
+              disabled={bulkPreviewRows.filter(r => r.checked).length === 0}
+              className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
+            >
+              Apply Selected
+            </button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* ======================== PREVIEW DIALOG (Excel Upload) ======================== */}
+      <Dialog
+        visible={bulkExcelPreviewVisible}
+        header="Confirm Bulk Updates – Excel"
+        style={{ width: '95%', maxWidth: '1400px' }}
+        className={`rounded-2xl ${darkMode ? '!bg-slate-900/80 !backdrop-blur-xl !border !border-white/10 !shadow-[0_30px_60px_rgba(0,0,0,0.7)]' : '!bg-white/90 !backdrop-blur-xl !shadow-[0_20px_50px_rgba(0,0,0,0.2)]'}`}
+        onHide={() => { setBulkExcelPreviewVisible(false); setBulkExcelPreviewData([]); }}
+      >
+        <div className="mt-2">
+          <div className="flex justify-between items-center mb-3">
+            <div className="text-sm">
+              <span className="font-bold">{bulkExcelPreviewData.filter(r => r.checked).length}</span> of {bulkExcelPreviewData.length} rows selected.
+            </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                inputId="selectAllExcelPreview"
+                checked={bulkExcelPreviewData.every(r => r.checked)}
+                onChange={(e) => {
+                  const checked = e.checked;
+                  setBulkExcelPreviewData(prev => prev.map(r => ({ ...r, checked })));
+                }}
+              />
+              <label htmlFor="selectAllExcelPreview" className="text-sm">Select All</label>
+            </div>
+          </div>
+
+          <DataTable
+            value={bulkExcelPreviewData}
+            paginator={bulkExcelPreviewData.length > 20}
+            rows={20}
+            scrollable
+            scrollHeight="600px"
+            className="text-sm"
+          >
+            <Column
+              header="Apply"
+              body={(rowData) => (
+                <Checkbox
+                  checked={rowData.checked}
+                  onChange={(e) => {
+                    const val = e.checked;
+                    setBulkExcelPreviewData(prev => prev.map(r =>
+                      r.styleNo === rowData.styleNo ? { ...r, checked: val } : r
+                    ));
+                  }}
+                />
+              )}
+              style={{ width: '70px' }}
+            />
+            <Column field="styleNo" header="Style No." frozen style={{ minWidth: '140px' }} />
+            <Column field="catNo" header="CAT NO" style={{ minWidth: '120px' }} />
+            {(() => {
+              // Collect all fields that have changes across all rows
+              const allFields = new Set();
+              bulkExcelPreviewData.forEach(row => {
+                if (row.changes) Object.keys(row.changes).forEach(f => allFields.add(f));
+              });
+              return Array.from(allFields).map(field => (
+                <Column
+                  key={field}
+                  header={makeLabel(field)}
+                  body={(row) => {
+                    if (!row.changes || !row.changes[field]) return <span className="text-gray-400">-</span>;
+                    const change = row.changes[field];
+                    const oldVal = change.old ?? '-';
+                    const newVal = change.new ?? '-';
+                    const isDate = allDateFields.includes(field);
+                    return (
+                      <div className="flex flex-col">
+                        <span className="text-red-500 line-through text-xs">{isDate ? formatDate(oldVal) : String(oldVal)}</span>
+                        <span className="text-green-500 font-semibold text-sm">{isDate ? formatDate(newVal) : String(newVal)}</span>
+                      </div>
+                    );
+                  }}
+                  style={{ minWidth: '120px' }}
+                />
+              ));
+            })()}
+          </DataTable>
+
+          <div className="flex justify-end gap-3 mt-4">
+            <button onClick={() => { setBulkExcelPreviewVisible(false); setBulkExcelPreviewData([]); }} className="px-4 py-2 border rounded">Cancel</button>
+            <button
+              onClick={handleBulkExcelApply}
+              disabled={bulkExcelPreviewData.filter(r => r.checked).length === 0}
+              className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50"
+            >
+              Apply Selected
+            </button>
+          </div>
         </div>
       </Dialog>
 
