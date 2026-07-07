@@ -328,44 +328,55 @@ const TrackerPage = () => {
   ], []);
 
   const filteredData = useMemo(() => {
-    let result = data;
-    if (filter && filter !== 'all') {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      switch (filter) {
-        case 'pending-gpt':
-          result = data.filter(item => item.plannedGPTStatus === 'Pending');
-          break;
-        case 'pending-fpt':
-          result = data.filter(item => item.plannedFPTStatus === 'Pending');
-          break;
-        case 'approved':
-          result = data.filter(item =>
-            item.labdipPlannedStatus === 'Approved' ||
-            item.photoSamplePlannedStatus === 'Approved' ||
-            item.plannedFPTStatus === 'Approved' ||
-            item.plannedGPTStatus === 'Approved' ||
-            item.gsmColorLotsPlannedStatus === 'Approved'
-          );
-          break;
-        case 'delayed':
-          result = data.filter(item => {
-            const dueDate = new Date(item.labdipQualityDeskloomDue);
-            return dueDate < today && item.labdipPlannedStatus !== 'Approved';
-          });
-          break;
-        case 'hold':
-          result = data.filter(item => item.pendingStatus === 'Hold');
-          break;
-        case 'urgent':
-          result = data.filter(item => item.priority === 'Urgent');
-          break;
-        default:
-          result = data;
-      }
+  let result = data;
+  if (filter && filter !== 'all') {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    switch (filter) {
+      // --- new cases (from dashboard cards) ---
+      case 'pending-labdip':
+        result = data.filter(item => item.labdipPlannedStatus === 'Pending');
+        break;
+      case 'pending-photo':
+        result = data.filter(item => item.photoSamplePlannedStatus === 'Pending');
+        break;
+      case 'pending-gsm':
+        result = data.filter(item => item.gsmColorLotsPlannedStatus === 'Pending');
+        break;
+      // --- existing cases ---
+      case 'pending-gpt':
+        result = data.filter(item => item.plannedGPTStatus === 'Pending');
+        break;
+      case 'pending-fpt':
+        result = data.filter(item => item.plannedFPTStatus === 'Pending');
+        break;
+      case 'approved':
+        result = data.filter(item =>
+          item.labdipPlannedStatus === 'Approved' ||
+          item.photoSamplePlannedStatus === 'Approved' ||
+          item.plannedFPTStatus === 'Approved' ||
+          item.plannedGPTStatus === 'Approved' ||
+          item.gsmColorLotsPlannedStatus === 'Approved'
+        );
+        break;
+      case 'delayed':
+        result = data.filter(item => {
+          const dueDate = new Date(item.labdipQualityDeskloomDue);
+          return dueDate < today && item.labdipPlannedStatus !== 'Approved';
+        });
+        break;
+      case 'hold':
+        result = data.filter(item => item.pendingStatus === 'Hold');
+        break;
+      case 'urgent':
+        result = data.filter(item => item.priority === 'Urgent');
+        break;
+      default:
+        result = data;
     }
+  }
 
-    if (selectedCatalog) result = result.filter(item => item.catNo === selectedCatalog);
+  if (selectedCatalog) result = result.filter(item => item.catNo === selectedCatalog);
 
     if (dateFilterField && (dateFilterStart || dateFilterEnd)) {
       const start = dateFilterStart ? new Date(dateFilterStart) : null;
