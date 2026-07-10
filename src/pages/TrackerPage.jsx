@@ -19,10 +19,10 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import AIChat from '../components/AIChat';
 import * as XLSX from 'xlsx';
-
 import {
   LayoutDashboard, LogOut, Plus, Trash2, Download, Printer,
-  Sun, Moon, Columns, Edit3, Users, Database, Grid, FilterX, Menu, Upload, Layers
+  Sun, Moon, Columns, Edit3, Users, Database, Grid, FilterX, Menu, Upload, Layers,
+  MessagesSquare, Bell, Send, X
 } from 'lucide-react';
 import { exportMasterLedger, exportHistoryLog, exportCSV } from '../utils/excelExport';
 
@@ -153,6 +153,19 @@ const TrackerPage = () => {
   const toast = useRef(null);
   const op = useRef(null);
 
+  // --- Notification & Comments State ---
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [commentsDialogVisible, setCommentsDialogVisible] = useState(false);
+  const [selectedEntryForComments, setSelectedEntryForComments] = useState(null);
+  const [commentText, setCommentText] = useState('');
+  const [commentMentions, setCommentMentions] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
+  const [entryComments, setEntryComments] = useState([]);
+  const [commentLoading, setCommentLoading] = useState(false);
+
+  // --- Existing State ---
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedRows, setSelectedRows] = useState([]);
@@ -172,9 +185,9 @@ const TrackerPage = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedCatalog, setSelectedCatalog] = useState(null);
 
-  // --- Bulk Update State (new) ---
+  // --- Bulk Update State ---
   const [bulkDialogVisible, setBulkDialogVisible] = useState(false);
-  const [bulkTab, setBulkTab] = useState('quick'); // 'quick' or 'excel'
+  const [bulkTab, setBulkTab] = useState('quick');
   const [bulkUpdateField, setBulkUpdateField] = useState('');
   const [bulkUpdateValue, setBulkUpdateValue] = useState('');
   const [bulkPreviewVisible, setBulkPreviewVisible] = useState(false);
@@ -223,6 +236,98 @@ const TrackerPage = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({});
 
+  // --- Notifications functions ---
+  const fetchNotifications = useCallback(async () => {
+    try {
+      const res = await api.get('/notifications');
+      setNotifications(res.data);
+      const unread = res.data.filter(n => !n.read).length;
+      setUnreadCount(unread);
+    } catch (err) {
+      // silent fail – not critical
+    }
+  }, []);
+
+  const markAsRead = useCallback(async (id) => {
+    try {
+      await api.put(`/notifications/${id}/read`);
+      setNotifications(prev =>
+        prev.map(n => (n._id === id ? { ...n, read: true } : n))
+      );
+      setUnreadCount(prev => Math.max(prev - 1, 0));
+    } catch (err) {
+      console.error('Failed to mark as read', err);
+    }
+  }, []);
+
+  const markAllRead = useCallback(async () => {
+    try {
+      await api.put('/notifications/read-all');
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      setUnreadCount(0);
+    } catch (err) {
+      console.error('Failed to mark all read', err);
+    }
+  }, []);
+
+  // --- Comments functions ---
+  const openCommentsDialog = useCallback((rowData) => {
+    setSelectedEntryForComments(rowData);
+    fetchEntryComments(rowData._id);
+    setCommentsDialogVisible(true);
+  }, []);
+
+  const fetchEntryComments = useCallback(async (entryId) => {
+    try {
+      const res = await api.get(`/tracker/${entryId}`);
+      setEntryComments(res.data.comments || []);
+    } catch (err) {
+      toast.current.show({ severity: 'error', summary: 'Error', detail: 'Failed to load comments', life: 3000 });
+    }
+  }, []);
+
+  const handleAddComment = useCallback(async () => {
+    if (!commentText.trim()) return;
+    setCommentLoading(true);
+    try {
+      await api.post(`/tracker/${selectedEntryForComments._id}/comments`, {
+        text: commentText.trim(),
+        mentions: commentMentions.map(u => u._id)
+      });
+      setCommentText('');
+      setCommentMentions([]);
+      fetchEntryComments(selectedEntryForComments._id);
+      toast.current.show({ severity: 'success', summary: 'Comment added', life: 1500 });
+    } catch (err) {
+      toast.current.show({ severity: 'error', summary: 'Error', detail: 'Failed to add comment', life: 3000 });
+    } finally {
+      setCommentLoading(false);
+    }
+  }, [commentText, commentMentions, selectedEntryForComments, fetchEntryComments]);
+
+  // --- Fetch users for mentions ---
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const res = await api.get('/users');
+        setAllUsers(res.data);
+      } catch (err) {
+        console.error('Failed to fetch users', err);
+      }
+    };
+    fetchUsers();
+  }, []);
+
+  // --- Poll notifications every 30s ---
+  useEffect(() => {
+    if (user) {
+      fetchNotifications();
+      const interval = setInterval(fetchNotifications, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [user, fetchNotifications]);
+
+  // --- Existing effect for filter from URL ---
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const filterParam = params.get('filter');
@@ -328,55 +433,53 @@ const TrackerPage = () => {
   ], []);
 
   const filteredData = useMemo(() => {
-  let result = data;
-  if (filter && filter !== 'all') {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    switch (filter) {
-      // --- new cases (from dashboard cards) ---
-      case 'pending-labdip':
-        result = data.filter(item => item.labdipPlannedStatus === 'Pending');
-        break;
-      case 'pending-photo':
-        result = data.filter(item => item.photoSamplePlannedStatus === 'Pending');
-        break;
-      case 'pending-gsm':
-        result = data.filter(item => item.gsmColorLotsPlannedStatus === 'Pending');
-        break;
-      // --- existing cases ---
-      case 'pending-gpt':
-        result = data.filter(item => item.plannedGPTStatus === 'Pending');
-        break;
-      case 'pending-fpt':
-        result = data.filter(item => item.plannedFPTStatus === 'Pending');
-        break;
-      case 'approved':
-        result = data.filter(item =>
-          item.labdipPlannedStatus === 'Approved' ||
-          item.photoSamplePlannedStatus === 'Approved' ||
-          item.plannedFPTStatus === 'Approved' ||
-          item.plannedGPTStatus === 'Approved' ||
-          item.gsmColorLotsPlannedStatus === 'Approved'
-        );
-        break;
-      case 'delayed':
-        result = data.filter(item => {
-          const dueDate = new Date(item.labdipQualityDeskloomDue);
-          return dueDate < today && item.labdipPlannedStatus !== 'Approved';
-        });
-        break;
-      case 'hold':
-        result = data.filter(item => item.pendingStatus === 'Hold');
-        break;
-      case 'urgent':
-        result = data.filter(item => item.priority === 'Urgent');
-        break;
-      default:
-        result = data;
+    let result = data;
+    if (filter && filter !== 'all') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      switch (filter) {
+        case 'pending-labdip':
+          result = data.filter(item => item.labdipPlannedStatus === 'Pending');
+          break;
+        case 'pending-photo':
+          result = data.filter(item => item.photoSamplePlannedStatus === 'Pending');
+          break;
+        case 'pending-gsm':
+          result = data.filter(item => item.gsmColorLotsPlannedStatus === 'Pending');
+          break;
+        case 'pending-gpt':
+          result = data.filter(item => item.plannedGPTStatus === 'Pending');
+          break;
+        case 'pending-fpt':
+          result = data.filter(item => item.plannedFPTStatus === 'Pending');
+          break;
+        case 'approved':
+          result = data.filter(item =>
+            item.labdipPlannedStatus === 'Approved' ||
+            item.photoSamplePlannedStatus === 'Approved' ||
+            item.plannedFPTStatus === 'Approved' ||
+            item.plannedGPTStatus === 'Approved' ||
+            item.gsmColorLotsPlannedStatus === 'Approved'
+          );
+          break;
+        case 'delayed':
+          result = data.filter(item => {
+            const dueDate = new Date(item.labdipQualityDeskloomDue);
+            return dueDate < today && item.labdipPlannedStatus !== 'Approved';
+          });
+          break;
+        case 'hold':
+          result = data.filter(item => item.pendingStatus === 'Hold');
+          break;
+        case 'urgent':
+          result = data.filter(item => item.priority === 'Urgent');
+          break;
+        default:
+          result = data;
+      }
     }
-  }
 
-  if (selectedCatalog) result = result.filter(item => item.catNo === selectedCatalog);
+    if (selectedCatalog) result = result.filter(item => item.catNo === selectedCatalog);
 
     if (dateFilterField && (dateFilterStart || dateFilterEnd)) {
       const start = dateFilterStart ? new Date(dateFilterStart) : null;
@@ -640,7 +743,6 @@ const TrackerPage = () => {
     for (const row of toUpdate) {
       const payload = {};
       for (const [field, change] of Object.entries(row.changes)) {
-        // Only send fields that are editable (already filtered)
         payload[field] = change.new;
       }
       if (Object.keys(payload).length === 0) continue;
@@ -1004,8 +1106,11 @@ const TrackerPage = () => {
   }, [darkMode]);
 
   const actionBodyTemplate = useCallback((rowData) => (
-    <Button icon="pi pi-pencil" className={`p-button-rounded p-button-text ${darkMode ? '!text-cyan-400 hover:!bg-cyan-400/10' : '!text-blue-600 hover:!bg-blue-50'}`} onClick={() => openEdit(rowData)} />
-  ), [darkMode, openEdit]);
+    <div className="flex gap-1">
+      <Button icon="pi pi-pencil" className={`p-button-rounded p-button-text ${darkMode ? '!text-cyan-400 hover:!bg-cyan-400/10' : '!text-blue-600 hover:!bg-blue-50'}`} onClick={() => openEdit(rowData)} />
+      <Button icon={<MessagesSquare size={14} />} className={`p-button-rounded p-button-text ${darkMode ? '!text-purple-400 hover:!bg-purple-400/10' : '!text-purple-600 hover:!bg-purple-50'}`} onClick={() => openCommentsDialog(rowData)} tooltip="Comments" />
+    </div>
+  ), [darkMode, openEdit, openCommentsDialog]);
 
   const allColumnDefs = useMemo(() => [
     ...(isAdmin ? [{ field: 'selection', header: '', body: null, frozen: true, style: { width: '50px' } }] : []),
@@ -1084,7 +1189,7 @@ const TrackerPage = () => {
     },
     { field: 'gsmColorLotsPlannedStatus', header: 'Gsm/Color (Status)', isStatus: true, filter: true, filterPlaceholder: 'Search' },
     { field: 'remark', header: 'Remark', filter: true, filterPlaceholder: 'Search' },
-    { field: 'actions', header: 'Edit', frozen: true, style: { width: '80px' } }
+    { field: 'actions', header: '', frozen: true, style: { width: '100px' } } // increased width for two buttons
   ], [isAdmin]);
 
   const visibleColumns = useMemo(() => allColumnDefs.filter(col => !hiddenColumns.includes(col.field)), [allColumnDefs, hiddenColumns]);
@@ -1188,11 +1293,52 @@ const TrackerPage = () => {
       {isAdmin && (
         <MultiSelect value={hiddenColumns} options={allColumnDefs.filter(col => col.field !== 'selection' && col.field !== 'actions').map(col => ({ label: col.header, value: col.field }))} onChange={(e) => setHiddenColumns(e.value)} placeholder="Hide" className="max-w-[120px]" display="chip" />
       )}
+      {/* Notification Bell */}
+      <div className="relative">
+        <button
+          onClick={() => setShowNotifications(!showNotifications)}
+          className={`p-2 rounded-lg transition-all duration-300 border hover:-translate-y-0.5 relative ${darkMode ? 'bg-slate-800/80 border-slate-700 text-white' : 'bg-white/80 border-gray-200 text-slate-700'}`}
+        >
+          <Bell size={18} />
+          {unreadCount > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5">
+              {unreadCount}
+            </span>
+          )}
+        </button>
+        {showNotifications && (
+          <div className="absolute right-0 mt-2 w-80 bg-white dark:bg-slate-800 rounded-lg shadow-xl z-50 max-h-96 overflow-y-auto border border-gray-200 dark:border-gray-700">
+            <div className="p-3 border-b flex justify-between items-center">
+              <span className="font-semibold">Notifications</span>
+              {unreadCount > 0 && (
+                <button onClick={markAllRead} className="text-xs text-blue-500 hover:underline">Mark all read</button>
+              )}
+            </div>
+            {notifications.length === 0 ? (
+              <div className="p-4 text-center text-gray-500">No notifications</div>
+            ) : (
+              notifications.map(n => (
+                <div
+                  key={n._id}
+                  className={`p-3 border-b hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer ${!n.read ? 'bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                  onClick={() => {
+                    markAsRead(n._id);
+                    navigate(n.link);
+                  }}
+                >
+                  <p className="text-sm">{n.message}</p>
+                  <span className="text-xs text-gray-400">{new Date(n.createdAt).toLocaleString()}</span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
       <button onClick={() => setDarkMode(!darkMode)} className={`p-2 rounded-lg transition-all duration-300 border hover:-translate-y-0.5 ${darkMode ? 'bg-slate-800/80 border-slate-700 text-yellow-400' : 'bg-white/80 border-gray-200 text-slate-700'}`}>
         {darkMode ? <Sun size={14} /> : <Moon size={14} />}
       </button>
     </div>
-  ), [exportSelectedOnly, selectedRows, handleExportMasterLedger, handleExportHistoryLog, handleExportCSV, isAdmin, allColumnDefs, darkMode, selectedCatalog, catalogOptions, hiddenColumns]);
+  ), [exportSelectedOnly, selectedRows, handleExportMasterLedger, handleExportHistoryLog, handleExportCSV, isAdmin, allColumnDefs, darkMode, selectedCatalog, catalogOptions, hiddenColumns, notifications, unreadCount, showNotifications, markAllRead, markAsRead, navigate]);
 
   const dialogFooter = useMemo(() => (
     <div className="flex justify-end gap-3 mt-4">
@@ -1286,7 +1432,7 @@ const TrackerPage = () => {
             >
               {visibleColumns.map(col => {
                 if (col.field === 'selection') return <Column key="sel" selectionMode="multiple" frozen alignFrozen="left" style={col.style} />;
-                if (col.field === 'actions') return <Column key="act" body={actionBodyTemplate} header="Edit" frozen alignFrozen="right" style={col.style} />;
+                if (col.field === 'actions') return <Column key="act" body={actionBodyTemplate} header="" frozen alignFrozen="right" style={col.style} />;
                 const headerContent = renderHeader(col);
                 return (
                   <Column
@@ -1579,7 +1725,6 @@ const TrackerPage = () => {
             <Column field="styleNo" header="Style No." frozen style={{ minWidth: '140px' }} />
             <Column field="catNo" header="CAT NO" style={{ minWidth: '120px' }} />
             {(() => {
-              // Collect all fields that have changes across all rows
               const allFields = new Set();
               bulkExcelPreviewData.forEach(row => {
                 if (row.changes) Object.keys(row.changes).forEach(f => allFields.add(f));
@@ -1858,6 +2003,70 @@ const TrackerPage = () => {
           <div className="flex justify-end gap-3 mt-4">
             <button onClick={() => { setShowPreview(false); setPreviewEntries([]); }} className="px-4 py-2 rounded border">Cancel</button>
             <button onClick={confirmImport} disabled={importing} className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50">{importing ? 'Importing...' : 'Confirm Import'}</button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* ======================== COMMENTS DIALOG ======================== */}
+      <Dialog
+        visible={commentsDialogVisible}
+        header={`Comments – ${selectedEntryForComments?.styleNo || ''}`}
+        style={{ width: '700px', maxWidth: '90vw' }}
+        className={`rounded-2xl ${darkMode ? '!bg-slate-900/80 !backdrop-blur-xl !border !border-white/10 !shadow-[0_30px_60px_rgba(0,0,0,0.7)]' : '!bg-white/90 !backdrop-blur-xl !shadow-[0_20px_50px_rgba(0,0,0,0.2)]'}`}
+        onHide={() => { setCommentsDialogVisible(false); setEntryComments([]); setCommentText(''); setCommentMentions([]); }}
+      >
+        <div className="space-y-4">
+          <div className="max-h-80 overflow-y-auto space-y-3">
+            {entryComments.length === 0 ? (
+              <p className="text-gray-400 text-sm">No comments yet.</p>
+            ) : (
+              entryComments.map((c, idx) => (
+                <div key={idx} className={`p-3 rounded-lg ${darkMode ? 'bg-white/5' : 'bg-gray-50'}`}>
+                  <div className="flex justify-between">
+                    <span className="font-semibold text-sm">{c.sender?.name || 'Unknown'}</span>
+                    <span className="text-xs text-gray-400">{new Date(c.createdAt).toLocaleString()}</span>
+                  </div>
+                  <p className="text-sm mt-1">{c.text}</p>
+                  {c.mentions?.length > 0 && (
+                    <div className="text-xs text-blue-400 mt-1">
+                      Mentions: {c.mentions.map(m => m.name).join(', ')}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+          <div className="flex flex-col gap-2 border-t pt-3">
+            <InputTextarea
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              placeholder="Write a comment..."
+              rows={2}
+              className={`w-full text-sm ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`}
+            />
+            <MultiSelect
+              value={commentMentions}
+              options={allUsers.filter(u => u._id !== user?._id).map(u => ({ label: u.name, value: u }))}
+              onChange={(e) => setCommentMentions(e.value)}
+              placeholder="Mention users"
+              display="chip"
+              className="w-full"
+              optionLabel="name"
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                label="Cancel"
+                className="p-button-text"
+                onClick={() => { setCommentsDialogVisible(false); setEntryComments([]); }}
+              />
+              <Button
+                label={commentLoading ? 'Sending...' : 'Send'}
+                icon={<Send size={14} />}
+                onClick={handleAddComment}
+                disabled={!commentText.trim() || commentLoading}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              />
+            </div>
           </div>
         </div>
       </Dialog>

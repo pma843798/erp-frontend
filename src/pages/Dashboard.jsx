@@ -24,6 +24,7 @@ import {
   ChevronRight,
   X,
   ExternalLink,
+  Bell, // 👈 new
 } from 'lucide-react';
 
 import api from '../services/api';
@@ -96,6 +97,54 @@ const Dashboard = () => {
     filterType: '',
     entries: [],
   });
+
+  // --- Notification state ---
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  // --- Notification functions ---
+  const fetchNotifications = async () => {
+    try {
+      const res = await api.get('/notifications');
+      setNotifications(res.data);
+      const unread = res.data.filter(n => !n.read).length;
+      setUnreadCount(unread);
+    } catch (err) {
+      // silent fail
+    }
+  };
+
+  const markAsRead = async (id) => {
+    try {
+      await api.put(`/notifications/${id}/read`);
+      setNotifications(prev =>
+        prev.map(n => (n._id === id ? { ...n, read: true } : n))
+      );
+      setUnreadCount(prev => Math.max(prev - 1, 0));
+    } catch (err) {
+      console.error('Failed to mark as read', err);
+    }
+  };
+
+  const markAllRead = async () => {
+    try {
+      await api.put('/notifications/read-all');
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      setUnreadCount(0);
+    } catch (err) {
+      console.error('Failed to mark all read', err);
+    }
+  };
+
+  // --- Poll notifications every 30s ---
+  useEffect(() => {
+    if (user) {
+      fetchNotifications();
+      const interval = setInterval(fetchNotifications, 30000);
+      return () => clearInterval(interval);
+    }
+  }, [user]);
 
   useEffect(() => {
     localStorage.setItem('theme', darkMode ? 'dark' : 'light');
@@ -182,8 +231,8 @@ const Dashboard = () => {
   };
 
   const handleCardClick = (filterType) => {
-  navigate(`/tracker?filter=${filterType}`);
-};
+    navigate(`/tracker?filter=${filterType}`);
+  };
   const closeModal = () => {
     setModal({ open: false, title: '', filterType: '', entries: [] });
   };
@@ -555,6 +604,62 @@ const Dashboard = () => {
               )}
             </div>
 
+            {/* 👇 Notification Bell (new) */}
+            <div className="relative">
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                className={`w-10 h-10 rounded-xl flex items-center justify-center transition relative ${
+                  darkMode
+                    ? 'bg-gray-800 hover:bg-gray-700 text-white'
+                    : 'bg-white border border-gray-200 hover:bg-gray-50 shadow-sm text-gray-600'
+                }`}
+              >
+                <Bell size={18} />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5">
+                    {unreadCount}
+                  </span>
+                )}
+              </button>
+
+              {showNotifications && (
+                <div className={`absolute right-0 mt-2 w-80 rounded-xl shadow-2xl border z-50 max-h-96 overflow-y-auto ${
+                  darkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+                }`}>
+                  <div className="p-3 border-b flex justify-between items-center">
+                    <span className="font-semibold text-sm">Notifications</span>
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={markAllRead}
+                        className="text-xs text-blue-500 hover:underline"
+                      >
+                        Mark all read
+                      </button>
+                    )}
+                  </div>
+                  {notifications.length === 0 ? (
+                    <div className="p-4 text-center text-gray-500 text-sm">No notifications</div>
+                  ) : (
+                    notifications.map(n => (
+                      <div
+                        key={n._id}
+                        className={`p-3 border-b hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer ${
+                          !n.read ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                        }`}
+                        onClick={() => {
+                          markAsRead(n._id);
+                          navigate(n.link);
+                        }}
+                      >
+                        <p className="text-sm">{n.message}</p>
+                        <span className="text-xs text-gray-400">{new Date(n.createdAt).toLocaleString()}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+
             <button
               onClick={() => setDarkMode(!darkMode)}
               className={`w-10 h-10 rounded-xl flex items-center justify-center transition ${
@@ -772,7 +877,7 @@ const Dashboard = () => {
                   </div>
                 </div>
 
-                {/* TABLE – FIXED TEXT VISIBILITY */}
+                {/* TABLE */}
                 <div className={`rounded-2xl border overflow-hidden shadow-sm ${
                   darkMode ? 'border-gray-700' : 'border-gray-200'
                 }`}>
