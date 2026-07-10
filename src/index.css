@@ -59,3 +59,45 @@
 .p-calendar .p-inputtext {
   border-radius: 0.5rem;
 }
+
+/* ---------- FIX: MultiSelect (Mention) Dropdown Visibility ---------- */
+.p-multiselect-panel {
+  background: white !important;
+  border: 1px solid #e2e8f0 !important;
+}
+.dark .p-multiselect-panel {
+  background: #1e293b !important;
+  border-color: #475569 !important;
+}
+
+.p-multiselect-items .p-multiselect-item {
+  color: #1a202c !important;
+  padding: 0.5rem 0.75rem !important;
+  transition: background 0.15s;
+}
+.p-multiselect-items .p-multiselect-item:hover {
+  background: #e2e8f0 !important;
+}
+.p-multiselect-items .p-multiselect-item.p-highlight {
+  background: #bee3f8 !important;
+  color: #1a202c !important;
+}
+
+.dark .p-multiselect-items .p-multiselect-item {
+  color: #e2e8f0 !important;
+}
+.dark .p-multiselect-items .p-multiselect-item:hover {
+  background: #334155 !important;
+}
+.dark .p-multiselect-items .p-multiselect-item.p-highlight {
+  background: #2b6cb0 !important;
+  color: white !important;
+}
+
+/* ---------- Chip (selected mentions) text visibility ---------- */
+.p-multiselect-chip {
+  color: #1a202c !important;
+}
+.dark .p-multiselect-chip {
+  color: #e2e8f0 !important;
+}
