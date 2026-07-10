@@ -2044,15 +2044,21 @@ const TrackerPage = () => {
               rows={2}
               className={`w-full text-sm ${darkMode ? 'bg-white/5 border-white/10 text-white' : 'border-gray-300'}`}
             />
-            <MultiSelect
-              value={commentMentions}
-              options={allUsers.filter(u => u._id !== user?._id).map(u => ({ label: u.name, value: u }))}
-              onChange={(e) => setCommentMentions(e.value)}
-              placeholder="Mention users"
-              display="chip"
-              className="w-full"
-              optionLabel="name"
-            />
+           <MultiSelect
+  value={commentMentions}
+  options={allUsers.filter(u => u._id !== user?._id).map(u => ({ label: u.name, value: u }))}
+  onChange={(e) => setCommentMentions(e.value)}
+  placeholder="Mention users"
+  display="chip"
+  className="w-full"
+  optionLabel="name"
+  panelClassName={darkMode ? 'dark-multiselect-panel' : 'light-multiselect-panel'}
+  itemTemplate={(option) => (
+    <div style={{ color: darkMode ? '#e2e8f0' : '#1a202c' }}>
+      {option.label}
+    </div>
+  )}
+/>
             <div className="flex justify-end gap-2">
               <Button
                 label="Cancel"

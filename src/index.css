@@ -82,7 +82,13 @@
   background: #bee3f8 !important;
   color: #1a202c !important;
 }
-
+/* MultiSelect panel backgrounds */
+.light-multiselect-panel {
+  background: white !important;
+}
+.dark-multiselect-panel {
+  background: #1e293b !important;
+}
 .dark .p-multiselect-items .p-multiselect-item {
   color: #e2e8f0 !important;
 }
